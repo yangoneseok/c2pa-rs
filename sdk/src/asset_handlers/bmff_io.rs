@@ -55,21 +55,22 @@ const MANIFEST: &str = "manifest";
 const MERKLE: &str = "merkle";
 
 // ISO IEC 14496-12_2022 FullBoxes
-const FULL_BOX_TYPES: &[&str; 80] = &[
+const FULL_BOX_TYPES: &[&str; 81] = &[
     "pdin", "mvhd", "tkhd", "mdhd", "hdlr", "nmhd", "elng", "stsd", "stdp", "stts", "ctts", "cslg",
     "stss", "stsh", "stdp", "elst", "dref", "stsz", "stz2", "stsc", "stco", "co64", "padb", "subs",
     "saiz", "saio", "mehd", "trex", "mfhd", "tfhd", "trun", "tfra", "mfro", "tfdt", "leva", "trep",
     "assp", "sbgp", "sgpd", "csgp", "cprt", "tsel", "kind", "meta", "xml ", "bxml", "iloc", "pitm",
     "ipro", "infe", "iinf", "iref", "ipma", "schm", "fiin", "fpar", "fecr", "gitn", "fire", "stri",
     "stsg", "stvi", "csch", "sidx", "ssix", "prft", "srpp", "vmhd", "smhd", "srat", "chnl", "dmix",
-    "txtC", "mime", "uri ", "uriI", "hmhd", "sthd", "vvhd", "medc",
+    "txtC", "mime", "uri ", "uriI", "hmhd", "sthd", "vvhd", "medc", "sdtp",
 ];
 
-static SUPPORTED_TYPES: [&str; 13] = [
+static SUPPORTED_TYPES: [&str; 14] = [
     "avif",
     "heif",
     "heic",
     "mp4",
+    "m4s",
     "m4a",
     "mov",
     "application/mp4",
@@ -163,6 +164,7 @@ boxtype! {
     Vp09Box => 0x76703039,
     MetaBox => 0x6D657461,
     SchiBox => 0x73636869,
+    SdtpBox => 0x73647470,
     IlocBox => 0x696C6F63
 }
 

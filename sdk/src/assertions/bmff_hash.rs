@@ -867,7 +867,6 @@ fn stream_len(reader: &mut dyn CAIRead) -> crate::Result<u64> {
     Ok(len)
 }
 
-/* we need shippable examples
 #[cfg(test)]
 pub mod tests {
     #![allow(clippy::expect_used)]
@@ -883,21 +882,19 @@ pub mod tests {
     #[test]
     fn test_fragemented_mp4() {
         use crate::{
-            assertions::BmffHash, asset_handlers::bmff_io::BmffIO, asset_io::AssetIO,
-            status_tracker::DetailedStatusTracker, store::Store, AssertionBase,
+            assertion::AssertionBase, assertions::BmffHash, asset_handlers::bmff_io::BmffIO,
+            asset_io::AssetIO, status_tracker::DetailedStatusTracker, store::Store,
         };
 
-        let init_stream_path = fixture_path("dashinit.mp4");
-        let segment_stream_path = fixture_path("dash1.m4s");
-        let segment_stream_path10 = fixture_path("dash10.m4s");
-        let segment_stream_path11 = fixture_path("dash11.m4s");
-
+        let init_stream_path = fixture_path("fragmented/boatinit.mp4");
+        let segment_stream_path = fixture_path("fragmented/boat1.m4s");
+        let segment_stream_path10 = fixture_path("fragmented/boat5.m4s");
+        let segment_stream_path11 = fixture_path("fragmented/boat6.m4s");
 
         let mut init_stream = std::fs::File::open(init_stream_path).unwrap();
         let mut segment_stream = std::fs::File::open(segment_stream_path).unwrap();
         let mut segment_stream10 = std::fs::File::open(segment_stream_path10).unwrap();
         let mut segment_stream11 = std::fs::File::open(segment_stream_path11).unwrap();
-
 
         let mut log = DetailedStatusTracker::default();
 
@@ -912,7 +909,6 @@ pub mod tests {
         for dh_assertion in claim.hash_assertions() {
             if dh_assertion.label_root() == BmffHash::LABEL {
                 let bmff_hash = BmffHash::from_assertion(dh_assertion).unwrap();
-
                 bmff_hash
                     .verify_stream_segment(&mut init_stream, &mut segment_stream, None)
                     .unwrap();
@@ -927,5 +923,45 @@ pub mod tests {
             }
         }
     }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_failed_fragemented_mp4() {
+        use crate::{
+            assertion::AssertionBase, assertions::BmffHash, asset_handlers::bmff_io::BmffIO,
+            asset_io::AssetIO, status_tracker::DetailedStatusTracker, store::Store,
+        };
+
+        let init_stream_path = fixture_path("fragmented/newscast_maninit.mp4");
+        let segment_stream_path2 = fixture_path("fragmented/newscast_man2.m4s");
+        let segment_stream_path5 = fixture_path("fragmented/newscast_man5.m4s");
+
+        let mut init_stream = std::fs::File::open(init_stream_path).unwrap();
+        let mut segment_stream2 = std::fs::File::open(segment_stream_path2).unwrap();
+        let mut segment_stream5 = std::fs::File::open(segment_stream_path5).unwrap();
+
+        let mut log = DetailedStatusTracker::default();
+
+        let bmff_io = BmffIO::new("mp4");
+        let bmff_handler = bmff_io.get_reader();
+
+        let manifest_bytes = bmff_handler.read_cai(&mut init_stream).unwrap();
+        let store = Store::from_jumbf(&manifest_bytes, &mut log).unwrap();
+
+        // get the bmff hashes
+        let claim = store.provenance_claim().unwrap();
+        for dh_assertion in claim.hash_assertions() {
+            if dh_assertion.label_root() == BmffHash::LABEL {
+                let bmff_hash = BmffHash::from_assertion(dh_assertion).unwrap();
+                let result2 =
+                    bmff_hash.verify_stream_segment(&mut init_stream, &mut segment_stream2, None);
+
+                let result5 =
+                    bmff_hash.verify_stream_segment(&mut init_stream, &mut segment_stream5, None);
+
+                assert!(result2.is_err(), "Expected a verify error");
+                assert!(result5.is_err(), "Expected a verify error");
+            }
+        }
+    }
 }
-*/

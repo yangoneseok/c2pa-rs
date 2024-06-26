@@ -148,3 +148,73 @@ impl C2PAMerkleTree {
         }
     }
 }
+
+#[cfg(test)]
+mod test_c2pa_merkle_tree {
+    use super::*;
+
+    #[test]
+    fn test_from_leaves() {
+        let leaves = vec![
+            MerkleNode(vec![1, 2, 3]),
+            MerkleNode(vec![4, 5, 6]),
+            MerkleNode(vec![7, 8, 9]),
+            MerkleNode(vec![10, 11, 12]),
+        ];
+
+        let tree = C2PAMerkleTree::from_leaves(leaves, "sha256", true);
+
+        assert_eq!(tree.leaves.len(), 4);
+        assert_eq!(tree.layers.len(), 3);
+    }
+
+    #[test]
+    fn test_to_layout() {
+        let layout = C2PAMerkleTree::to_layout(4);
+        assert_eq!(layout, vec![4, 2, 1]);
+    }
+
+    // #[test]
+    // fn test_get_root() {
+    //     let leaves = vec![MerkleNode(vec![1, 2, 3]), MerkleNode(vec![4, 5, 6])];
+
+    //     let tree = C2PAMerkleTree::from_leaves(leaves, "sha256", true);
+    //     let root = tree.get_root();
+
+    //     assert!(root.is_some());
+    //     assert_eq!(root.unwrap(), &vec![1, 2, 3, 4, 5, 6]);
+    // }
+
+    #[test]
+    fn test_get_proof_by_index() {
+        let leaves = vec![
+            MerkleNode(vec![1, 2, 3]),
+            MerkleNode(vec![4, 5, 6]),
+            MerkleNode(vec![7, 8, 9]),
+            MerkleNode(vec![10, 11, 12]),
+        ];
+
+        let tree = C2PAMerkleTree::from_leaves(leaves, "sha256", true);
+        let proof = tree.get_proof_by_index(1);
+
+        assert!(proof.is_ok());
+        let proof = proof.unwrap();
+        assert_eq!(proof.len(), 2);
+    }
+
+    #[test]
+    fn test_num_layers_required() {
+        assert_eq!(C2PAMerkleTree::num_layers_required(1), 0);
+        assert_eq!(C2PAMerkleTree::num_layers_required(2), 1);
+        assert_eq!(C2PAMerkleTree::num_layers_required(4), 2);
+        assert_eq!(C2PAMerkleTree::num_layers_required(8), 3);
+    }
+
+    #[test]
+    fn test_tree_dump() {
+        let leaves = vec![MerkleNode(vec![1, 2, 3]), MerkleNode(vec![4, 5, 6])];
+
+        let tree = C2PAMerkleTree::from_leaves(leaves, "sha256", true);
+        tree.tree_dump(); // This just prints the tree layout; no assertions needed
+    }
+}

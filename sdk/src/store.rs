@@ -1697,7 +1697,7 @@ impl Store {
         exclusions.push(trun);
 
         // V2 exclusions
-        /*  Enable this when we support Merkle trees and fragmented MP4
+        //  Enable this when we support Merkle trees and fragmented MP4
         // /mdat exclusion
         let mut mdat = ExclusionsMap::new("/mdat".to_owned());
         let subset_mdat = SubsetMap {
@@ -1707,7 +1707,7 @@ impl Store {
         let subset_mdat_vec = vec![subset_mdat];
         mdat.subset = Some(subset_mdat_vec);
         exclusions.push(mdat);
-        */
+        
 
         if calc_hashes {
             dh.gen_hash_from_stream(asset_stream)?;

@@ -148,3 +148,77 @@ impl C2PAMerkleTree {
         }
     }
 }
+
+#[cfg(test)]
+pub mod tests {
+    #![allow(clippy::expect_used)]
+    #![allow(clippy::panic)]
+    #![allow(clippy::unwrap_used)]
+
+
+    use tempfile::tempdir;
+    // use super::*;
+
+    use crate::utils::test::{fixture_path, temp_dir_path};
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_generate_merkle_mp4() {
+        use crate::{
+            assertion::AssertionBase, assertions::BmffHash, asset_handlers::bmff_io::BmffIO, asset_io::AssetIO, 
+            status_tracker::DetailedStatusTracker, store::Store, 
+        };
+        //let exclusion_map = ExclusionsMap::new("/uuid".to_owned());
+        let init_stream_path = fixture_path("fragment/boatinit.mp4");
+        let segment_stream_path = fixture_path("fragment/boat1.m4s");
+        let segment_stream_path10 = fixture_path("fragment/boat2.m4s");
+        let segment_stream_path11 = fixture_path("fragment/boat3.m4s");
+        
+        if let Ok(temp_dir) = tempdir() {
+            let output = temp_dir_path(&temp_dir, "mp4_test.mp4");
+            let output1 = temp_dir_path(&temp_dir, "mp4_test1.m4s");
+            let output2 = temp_dir_path(&temp_dir, "mp4_test2.m4s");
+            let output3 = temp_dir_path(&temp_dir, "mp4_test3.m4s");
+
+            if let Ok(_size) = std::fs::copy(init_stream_path, &output) {
+                std::fs::copy(segment_stream_path, &output1).unwrap();
+                std::fs::copy(segment_stream_path10, &output2).unwrap();
+                std::fs::copy(segment_stream_path11, &output3).unwrap();
+                // let bmff = BmffIO::new("mp4");
+                let mut init_stream = std::fs::File::open(output).unwrap();
+                let mut segment_stream = std::fs::File::open(output1).unwrap();
+                let mut segment_stream10 = std::fs::File::open(output2).unwrap();
+                let mut segment_stream11 = std::fs::File::open(output3).unwrap();
+
+                
+                let mut log = DetailedStatusTracker::default();
+
+                let bmff_io = BmffIO::new("mp4");
+                let bmff_handler = bmff_io.get_reader();
+                let manifest_bytes = bmff_handler.read_cai(&mut init_stream).unwrap();
+                let store = Store::from_jumbf(&manifest_bytes, &mut log).unwrap();
+                
+                // let segment_stream_hash = hash_stream_by_alg('');
+                // get the bmff hashes
+                let claim = store.provenance_claim().unwrap();
+                for dh_assertion in claim.hash_assertions() {
+                    if dh_assertion.label_root() == BmffHash::LABEL {
+                        let bmff_hash = BmffHash::from_assertion(dh_assertion).unwrap();
+
+                        bmff_hash
+                            .verify_stream_segment(&mut init_stream, &mut segment_stream, None)
+                            .unwrap();
+
+                        bmff_hash
+                            .verify_stream_segment(&mut init_stream, &mut segment_stream10, None)
+                            .unwrap();
+
+                        bmff_hash
+                            .verify_stream_segment(&mut init_stream, &mut segment_stream11, None)
+                            .unwrap();
+                    }
+                }
+            }
+        }
+    }
+}

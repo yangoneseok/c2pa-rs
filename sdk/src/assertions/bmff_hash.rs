@@ -786,13 +786,13 @@ impl BmffHash {
                         ) {
                             return Err(Error::HashMismatch("BMFF inithash mismatch".to_string()));
                         }
-
+                        println!("{}, bmff_exclusions: {:?}", line!(), bmff_exclusions);
                         let fragment_exclusions = bmff_to_jumbf_exclusions(
                             fragment_stream,
                             bmff_exclusions,
                             self.bmff_version > 1,
                         )?;
-
+                        println!("{:?}, fragment_exclusions: {:?} ", line!(), fragment_exclusions);
                         // hash the entire fragment minus exclusions
                         let hash = hash_stream_by_alg(
                             alg,
@@ -867,7 +867,7 @@ fn stream_len(reader: &mut dyn CAIRead) -> crate::Result<u64> {
     Ok(len)
 }
 
-/* we need shippable examples
+// we need shippable examples
 #[cfg(test)]
 pub mod tests {
     #![allow(clippy::expect_used)]
@@ -884,13 +884,13 @@ pub mod tests {
     fn test_fragemented_mp4() {
         use crate::{
             assertions::BmffHash, asset_handlers::bmff_io::BmffIO, asset_io::AssetIO,
-            status_tracker::DetailedStatusTracker, store::Store, AssertionBase,
+            status_tracker::DetailedStatusTracker, store::Store, assertion::AssertionBase
         };
 
-        let init_stream_path = fixture_path("dashinit.mp4");
-        let segment_stream_path = fixture_path("dash1.m4s");
-        let segment_stream_path10 = fixture_path("dash10.m4s");
-        let segment_stream_path11 = fixture_path("dash11.m4s");
+        let init_stream_path = fixture_path("fragment/boatinit.mp4");
+        let segment_stream_path = fixture_path("fragment/boat1.m4s");
+        let segment_stream_path10 = fixture_path("fragment/boat2.m4s");
+        let segment_stream_path11 = fixture_path("fragment/boat3.m4s");
 
 
         let mut init_stream = std::fs::File::open(init_stream_path).unwrap();
@@ -901,7 +901,7 @@ pub mod tests {
 
         let mut log = DetailedStatusTracker::default();
 
-        let bmff_io = BmffIO::new("mp4");
+        let bmff_io: BmffIO = BmffIO::new("mp4");
         let bmff_handler = bmff_io.get_reader();
 
         let manifest_bytes = bmff_handler.read_cai(&mut init_stream).unwrap();
@@ -928,4 +928,4 @@ pub mod tests {
         }
     }
 }
-*/
+

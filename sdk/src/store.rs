@@ -1615,7 +1615,7 @@ impl Store {
         Ok(hashes)
     }
 
-    fn generate_bmff_data_hashes_for_stream(
+    pub fn generate_bmff_data_hashes_for_stream(
         asset_stream: &mut dyn CAIRead,
         alg: &str,
         calc_hashes: bool,
@@ -1627,7 +1627,7 @@ impl Store {
 
         let mut hashes: Vec<BmffHash> = Vec::new();
 
-        let mut dh = BmffHash::new("jumbf manifest", alg, None);
+        let mut dh: BmffHash = BmffHash::new("jumbf manifest", alg, None);
         let exclusions = dh.exclusions_mut();
 
         // jumbf exclusion
@@ -1707,7 +1707,6 @@ impl Store {
         let subset_mdat_vec = vec![subset_mdat];
         mdat.subset = Some(subset_mdat_vec);
         exclusions.push(mdat);
-        
 
         if calc_hashes {
             dh.gen_hash_from_stream(asset_stream)?;
@@ -1719,6 +1718,7 @@ impl Store {
                 _ => return Err(Error::UnsupportedType),
             }
         }
+        println!("{}:{}, dh:{:?}", file!(), line!(), dh);
         hashes.push(dh);
 
         Ok(hashes)
@@ -2819,7 +2819,7 @@ impl Store {
         if is_bmff {
             // 2) Get hash ranges if needed, do not generate for update manifests
             if !pc.update_manifest() {
-                let mut file = std::fs::File::open(asset_path)?;
+                let mut file: fs::File = std::fs::File::open(asset_path)?;
                 let bmff_hashes =
                     Store::generate_bmff_data_hashes_for_stream(&mut file, pc.alg(), false)?;
                 for hash in bmff_hashes {
@@ -3419,11 +3419,14 @@ pub mod tests {
     use crate::{
         assertion::AssertionJson,
         assertions::{labels::BOX_HASH, Action, Actions, BoxHash, Uuid},
+        asset_handlers::bmff_io::BmffIO,
+        asset_io::AssetIO,
         claim::AssertionStoreJsonFormat,
         jumbf_io::{get_assetio_handler_from_path, update_file_jumbf},
         status_tracker::*,
         utils::{
             hash_utils::Hasher,
+            merkle,
             patch::patch_file,
             test::{
                 create_test_claim, fixture_path, temp_dir_path, temp_fixture_path, temp_signer,
@@ -4770,9 +4773,11 @@ pub mod tests {
     #[test]
     fn test_bmff_jumbf_generation() {
         // test adding to actual image
-        let ap = fixture_path("video1.mp4");
+        let ap = fixture_path("fixtures/fragment/boatinit.mp4");
         let temp_dir = tempdir().expect("temp dir");
-        let op = temp_dir_path(&temp_dir, "video1.mp4");
+
+        let op = temp_dir_path(&temp_dir, "boatinit.mp4");
+        // let op = fixture_path("boatinit.mp4");
 
         // Create claims store.
         let mut store = Store::new();
@@ -4787,9 +4792,10 @@ pub mod tests {
         store.save_to_asset(&ap, signer.as_ref(), &op).unwrap();
 
         let mut report = DetailedStatusTracker::new();
-
+        println!("{}:{}, _new_store: {:?}", file!(), line!(), op);
         // can we read back in
         let _new_store = Store::load_from_asset(&op, true, &mut report).unwrap();
+        println!("{}:{}, _new_store: {:?}", file!(), line!(), _new_store);
     }
 
     #[test]
@@ -5648,5 +5654,126 @@ pub mod tests {
 
         let errors = report_split_errors(report.get_log_mut());
         assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_fragment_mp4_merkle_tree() {
+        use crate::{
+            assertion::AssertionBase, assertions::BmffHash, asset_handlers::bmff_io::BmffIO,
+            asset_io::AssetIO, status_tracker::DetailedStatusTracker, store::Store,
+        };
+
+        let init_stream_path = fixture_path("fragment/boatinit.mp4");
+        let segment_stream_path = fixture_path("fragment/boat1.m4s");
+        let segment_stream_path10 = fixture_path("fragment/boat2.m4s");
+        let segment_stream_path11 = fixture_path("fragment/boat3.m4s");
+
+        if let Ok(temp_dir) = tempdir() {
+            let output = temp_dir_path(&temp_dir, "mp4_test.mp4");
+            let output1 = temp_dir_path(&temp_dir, "mp4_test1.m4s");
+            let output2 = temp_dir_path(&temp_dir, "mp4_test2.m4s");
+            let output3 = temp_dir_path(&temp_dir, "mp4_test3.m4s");
+
+            if let Ok(_size) = std::fs::copy(init_stream_path, &output) {
+                std::fs::copy(segment_stream_path, &output1).unwrap();
+                std::fs::copy(segment_stream_path10, &output2).unwrap();
+                std::fs::copy(segment_stream_path11, &output3).unwrap();
+                // let bmff = BmffIO::new("mp4");
+                let mut init_stream = std::fs::File::open(output).unwrap();
+                let mut segment_stream = std::fs::File::open(output1).unwrap();
+                let mut segment_stream10 = std::fs::File::open(output2).unwrap();
+                let mut segment_stream11 = std::fs::File::open(output3).unwrap();
+
+                let mut log = DetailedStatusTracker::default();
+
+                let bmff_io = BmffIO::new("mp4");
+                let bmff_handler = bmff_io.get_reader();
+                let manifest_bytes = bmff_handler.read_cai(&mut init_stream).unwrap();
+                let store = Store::from_jumbf(&manifest_bytes, &mut log).unwrap();
+
+                let claim = store.provenance_claim().unwrap();
+                for dh_assertion in claim.hash_assertions() {
+                    if dh_assertion.label_root() == BmffHash::LABEL {
+                        let bmff_hash = BmffHash::from_assertion(dh_assertion).unwrap();
+
+                        bmff_hash
+                            .verify_stream_segment(&mut init_stream, &mut segment_stream, None)
+                            .unwrap();
+
+                        bmff_hash
+                            .verify_stream_segment(&mut init_stream, &mut segment_stream10, None)
+                            .unwrap();
+
+                        bmff_hash
+                            .verify_stream_segment(&mut init_stream, &mut segment_stream11, None)
+                            .unwrap();
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn test_fragment_mp4_hash() {
+        let init_stream_path = fixture_path("fragment/boatinit.mp4");
+        let segment_stream_path = [
+            fixture_path("fragment/boat1.m4s"),
+            fixture_path("fragment/boat2.m4s"),
+            fixture_path("fragment/boat3.m4s"),
+            fixture_path("fragment/boat4.m4s"),
+            fixture_path("fragment/boat5.m4s"),
+            fixture_path("fragment/boat6.m4s"),
+        ];
+
+        let mut init_file: fs::File = std::fs::File::open(init_stream_path).unwrap();
+        let segment_files = segment_stream_path.map(|x| std::fs::File::open(x).unwrap());
+        ////  제거 대상
+        let mut log = DetailedStatusTracker::default();
+
+        let bmff_io: BmffIO = BmffIO::new("mp4");
+        let bmff_handler = bmff_io.get_reader();
+
+        let manifest_bytes = bmff_handler.read_cai(&mut init_file).unwrap();
+        let store = Store::from_jumbf(&manifest_bytes, &mut log).unwrap();
+        let claim = store.provenance_claim().unwrap();
+        let dh_assertion = claim.hash_assertions()[0];
+        // 여기까지 제거대상
+
+        // let init_hash =
+        //     Store::generate_bmff_data_hashes_for_stream(&mut init_file, "sha256", true).unwrap();
+        let bmff_hash = BmffHash::from_assertion(dh_assertion).unwrap();
+        // let mut ex = bmff_hash.exclusions_mut();
+        // ex = init_hash[0].exclusions_mut();
+        let init_hash = bmff_hash
+            .create_stream_segment_hash(&mut init_file, None)
+            .unwrap();
+
+        // let segment_hash = segment_files.map(|mut s| {
+        //     Store::generate_bmff_data_hashes_for_stream(&mut s, "sha256", true).unwrap()
+        // });
+        // .map(|x| merkle::MerkleNode(x[0].hash().to_der_vec().unwrap()))
+        // .to_vec();
+
+        // let mut segment_hash = Vec::new();
+        let segment_hash = segment_files.map(|mut s| {
+            let bmff_hash = BmffHash::from_assertion(dh_assertion).unwrap();
+            // let mut ex = bmff_hash.exclusions_mut();
+            // ex = init_hash[0].exclusions_mut();
+            let hash = bmff_hash.create_stream_segment_hash(&mut s, None).unwrap();
+            merkle::MerkleNode(hash)
+        });
+        println!("boatinit  : {:?}", init_hash);
+        println!("\n\n boat[] : {:?}\n\n", segment_hash);
+        let merkle_tree =
+            merkle::C2PAMerkleTree::from_leaves(segment_hash.to_vec(), "sha256", false);
+        println!("\n\nMerkle layers : {:?}\n\n", merkle_tree.layers);
+        println!("\n\nMerkle layers : {:?}\n\n", merkle_tree.leaves);
+        println!(
+            "\n\nMerkle Proof : {:?}\n\n",
+            merkle_tree.get_proof_by_index(0)
+        );
+        assert_ne!(
+            merkle::MerkleNode([0, 1, 2, 3, 4, 5, 6].to_vec()),
+            merkle::MerkleNode([0, 1, 2, 3, 4, 5].to_vec())
+        );
     }
 }

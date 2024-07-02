@@ -748,12 +748,24 @@ impl BmffHash {
         if let Some(mm_vec) = self.merkle() {
             // get merkle boxes from segment
             let c2pa_boxes = read_bmff_c2pa_boxes(fragment_stream)?;
+            // println!(
+            //     "{}:{}, c2pa_boxes.box_infos: {:?}\n",
+            //     file!(),
+            //     line!(),
+            //     c2pa_boxes.box_infos
+            // );
+
             let bmff_merkle = c2pa_boxes.bmff_merkle;
 
             if bmff_merkle.is_empty() {
                 return Err(Error::HashMismatch("Fragment had no MerkleMap".to_string()));
             }
-
+            println!(
+                "\n\n{}:{}, bmff_merkle: {:?}\n\n",
+                file!(),
+                line!(),
+                bmff_merkle
+            );
             for bmff_mm in bmff_merkle {
                 // find matching MerkleMap for this uniqueId & localId
                 if let Some(mm) = mm_vec
@@ -776,7 +788,6 @@ impl BmffHash {
                             bmff_exclusions,
                             self.bmff_version > 1,
                         )?;
-
                         if !verify_stream_by_alg(
                             alg,
                             init_hash,
@@ -786,17 +797,19 @@ impl BmffHash {
                         ) {
                             return Err(Error::HashMismatch("BMFF inithash mismatch".to_string()));
                         }
-                        println!("{}, bmff_exclusions: {:?}", line!(), bmff_exclusions);
-                        let fragment_exclusions = bmff_to_jumbf_exclusions(
+
+                        let fragment_exclusions: Vec<HashRange> = bmff_to_jumbf_exclusions(
                             fragment_stream,
                             bmff_exclusions,
                             self.bmff_version > 1,
                         )?;
+
                         println!(
                             "{:?}, fragment_exclusions: {:?} ",
                             line!(),
                             fragment_exclusions
                         );
+
                         // hash the entire fragment minus exclusions
                         let hash = hash_stream_by_alg(
                             alg,
@@ -804,7 +817,7 @@ impl BmffHash {
                             Some(fragment_exclusions),
                             true,
                         )?;
-
+                        println!("{:?}, fragment_hash: {:?} ", line!(), hash);
                         // check MerkleMap for the hash
                         if !mm.check_merkle_tree(alg, &hash, bmff_mm.location, &bmff_mm.hashes) {
                             return Err(Error::HashMismatch("Fragment not valid".to_string()));
@@ -821,6 +834,42 @@ impl BmffHash {
         }
 
         Ok(())
+    }
+
+    pub fn create_stream_segment_hash(
+        &self,
+        // init_stream: &mut dyn CAIRead,
+        fragment_stream: &mut dyn CAIRead,
+        alg: Option<&str>,
+    ) -> crate::Result<Vec<u8>> {
+        let curr_alg = match &self.alg {
+            Some(a) => a.clone(),
+            None => match alg {
+                Some(a) => a.to_owned(),
+                None => "sha256".to_string(),
+            },
+        };
+
+        // handle file level hashing
+        if self.hash().is_some() {
+            return Err(Error::HashMismatch(
+                "Hash value should not be present for a fragmented BMFF asset".to_string(),
+            ));
+        }
+        let bmff_exclusions = &self.exclusions;
+        // Merkle hashed BMFF
+        let fragment_exclusions: Vec<HashRange> =
+            bmff_to_jumbf_exclusions(fragment_stream, bmff_exclusions, self.bmff_version > 1)?;
+        println!(
+            "{:?}, fragment_exclusions: {:?} ",
+            line!(),
+            fragment_exclusions
+        );
+        // hash the entire fragment minus exclusions
+        let hash = hash_stream_by_alg(&curr_alg, fragment_stream, Some(fragment_exclusions), true)?;
+        println!("{}, fragment_hash: {:?} ", line!(), hash);
+
+        Ok(hash)
     }
 }
 
@@ -923,6 +972,9 @@ pub mod tests {
 
                 bmff_hash
                     .verify_stream_segment(&mut init_stream, &mut segment_stream11, None)
+                    .unwrap();
+                bmff_hash
+                    .create_stream_segment_hash(&mut segment_stream11, None)
                     .unwrap();
             }
         }

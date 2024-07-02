@@ -1871,12 +1871,12 @@ pub mod tests {
             store::Store,
         };
 
-        let ap = fixture_path("video1.mp4");
-
+        // let ap = fixture_path("video1.mp4");
+        let ap = fixture_path("fragment/boatinit.mp4");
         let mut log = DetailedStatusTracker::default();
         let store = Store::load_from_asset(&ap, true, &mut log);
-
         let errors = report_split_errors(log.get_log_mut());
+        println!("{:#?}", log.get_log_mut());
         assert!(errors.is_empty());
 
         if let Ok(s) = store {

@@ -276,3 +276,22 @@ where
         .or_else(|_| std::fs::copy(&path, asset_path).and(Ok(())))
         .map_err(crate::Error::IoError)
 }
+
+pub trait FragmentIO: Sync + Send {
+    fn fragment_write_cai(
+        &self,
+        input_stream: &mut dyn CAIRead,
+        output_stream: &mut dyn CAIReadWrite,
+        store_bytes: &[u8],
+        is_manifest: bool,
+        merkle_data: &[u8],
+    ) -> Result<()>;
+
+    fn save_cai_store_fragment(
+        &self,
+        asset_path: &Path,
+        store_bytes: &[u8],
+        is_manifest: bool,
+        merkle_data: &[u8],
+    ) -> Result<()>;
+}

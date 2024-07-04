@@ -110,6 +110,7 @@ pub mod validation_status;
 pub mod wasm;
 
 // Public exports
+pub use asset_io::FragmentIO;
 #[cfg(feature = "v1_api")]
 pub use asset_io::{CAIRead, CAIReadWrite};
 #[cfg(feature = "unstable_api")]

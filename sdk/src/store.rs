@@ -5663,26 +5663,39 @@ pub mod tests {
             asset_io::AssetIO, status_tracker::DetailedStatusTracker, store::Store,
         };
 
-        let init_stream_path = fixture_path("fragment/boatinit.mp4");
-        let segment_stream_path = fixture_path("fragment/boat1.m4s");
-        let segment_stream_path10 = fixture_path("fragment/boat2.m4s");
-        let segment_stream_path11 = fixture_path("fragment/boat3.m4s");
+        let init_stream_path = fixture_path("fragmented/boatinit.mp4");
+        let segment_stream_path1 = fixture_path("fragmented/boat1.m4s");
+        let segment_stream_path2 = fixture_path("fragmented/boat2.m4s");
+        let segment_stream_path3 = fixture_path("fragmented/boat3.m4s");
+        let segment_stream_path4 = fixture_path("fragmented/boat4.m4s");
+        let segment_stream_path5 = fixture_path("fragmented/boat5.m4s");
+        let segment_stream_path6 = fixture_path("fragmented/boat6.m4s");
 
         if let Ok(temp_dir) = tempdir() {
             let output = temp_dir_path(&temp_dir, "mp4_test.mp4");
             let output1 = temp_dir_path(&temp_dir, "mp4_test1.m4s");
             let output2 = temp_dir_path(&temp_dir, "mp4_test2.m4s");
             let output3 = temp_dir_path(&temp_dir, "mp4_test3.m4s");
+            let output4 = temp_dir_path(&temp_dir, "mp4_test4.m4s");
+            let output5 = temp_dir_path(&temp_dir, "mp4_test5.m4s");
+            let output6 = temp_dir_path(&temp_dir, "mp4_test6.m4s");
 
             if let Ok(_size) = std::fs::copy(init_stream_path, &output) {
-                std::fs::copy(segment_stream_path, &output1).unwrap();
-                std::fs::copy(segment_stream_path10, &output2).unwrap();
-                std::fs::copy(segment_stream_path11, &output3).unwrap();
+                std::fs::copy(segment_stream_path1, &output1).unwrap();
+                std::fs::copy(segment_stream_path2, &output2).unwrap();
+                std::fs::copy(segment_stream_path3, &output3).unwrap();
+                std::fs::copy(segment_stream_path4, &output4).unwrap();
+                std::fs::copy(segment_stream_path5, &output5).unwrap();
+                std::fs::copy(segment_stream_path6, &output6).unwrap();
+
                 // let bmff = BmffIO::new("mp4");
                 let mut init_stream = std::fs::File::open(output).unwrap();
-                let mut segment_stream = std::fs::File::open(output1).unwrap();
-                let mut segment_stream10 = std::fs::File::open(output2).unwrap();
-                let mut segment_stream11 = std::fs::File::open(output3).unwrap();
+                let mut segment_stream1 = std::fs::File::open(output1).unwrap();
+                let mut segment_stream2 = std::fs::File::open(output2).unwrap();
+                let mut segment_stream3 = std::fs::File::open(output3).unwrap();
+                let mut segment_stream4 = std::fs::File::open(output4).unwrap();
+                let mut segment_stream5 = std::fs::File::open(output5).unwrap();
+                let mut segment_stream6 = std::fs::File::open(output6).unwrap();
 
                 let mut log = DetailedStatusTracker::default();
 
@@ -5697,15 +5710,24 @@ pub mod tests {
                         let bmff_hash = BmffHash::from_assertion(dh_assertion).unwrap();
 
                         bmff_hash
-                            .verify_stream_segment(&mut init_stream, &mut segment_stream, None)
+                            .verify_stream_segment(&mut init_stream, &mut segment_stream1, None)
                             .unwrap();
 
                         bmff_hash
-                            .verify_stream_segment(&mut init_stream, &mut segment_stream10, None)
+                            .verify_stream_segment(&mut init_stream, &mut segment_stream2, None)
                             .unwrap();
 
                         bmff_hash
-                            .verify_stream_segment(&mut init_stream, &mut segment_stream11, None)
+                            .verify_stream_segment(&mut init_stream, &mut segment_stream3, None)
+                            .unwrap();
+                        bmff_hash
+                            .verify_stream_segment(&mut init_stream, &mut segment_stream4, None)
+                            .unwrap();
+                        bmff_hash
+                            .verify_stream_segment(&mut init_stream, &mut segment_stream5, None)
+                            .unwrap();
+                        bmff_hash
+                            .verify_stream_segment(&mut init_stream, &mut segment_stream6, None)
                             .unwrap();
                     }
                 }
@@ -5714,14 +5736,14 @@ pub mod tests {
     }
     #[test]
     fn test_fragment_mp4_hash() {
-        let init_stream_path = fixture_path("fragment/boatinit.mp4");
+        let init_stream_path = fixture_path("fragmented/boatinit.mp4");
         let segment_stream_path = [
-            fixture_path("fragment/boat1.m4s"),
-            fixture_path("fragment/boat2.m4s"),
-            fixture_path("fragment/boat3.m4s"),
-            fixture_path("fragment/boat4.m4s"),
-            fixture_path("fragment/boat5.m4s"),
-            fixture_path("fragment/boat6.m4s"),
+            fixture_path("fragmented/boat1.m4s"),
+            fixture_path("fragmented/boat2.m4s"),
+            fixture_path("fragmented/boat3.m4s"),
+            fixture_path("fragmented/boat4.m4s"),
+            fixture_path("fragmented/boat5.m4s"),
+            fixture_path("fragmented/boat6.m4s"),
         ];
 
         let mut init_file: fs::File = std::fs::File::open(init_stream_path).unwrap();
@@ -5740,12 +5762,13 @@ pub mod tests {
 
         // let init_hash =
         //     Store::generate_bmff_data_hashes_for_stream(&mut init_file, "sha256", true).unwrap();
-        let bmff_hash = BmffHash::from_assertion(dh_assertion).unwrap();
+        let mut bmff_hash = BmffHash::from_assertion(dh_assertion).unwrap();
         // let mut ex = bmff_hash.exclusions_mut();
         // ex = init_hash[0].exclusions_mut();
         let init_hash = bmff_hash
             .create_stream_segment_hash(&mut init_file, None)
             .unwrap();
+        let _ = bmff_hash.gen_hash_from_stream(&mut init_file);
 
         // let segment_hash = segment_files.map(|mut s| {
         //     Store::generate_bmff_data_hashes_for_stream(&mut s, "sha256", true).unwrap()
@@ -5754,26 +5777,88 @@ pub mod tests {
         // .to_vec();
 
         // let mut segment_hash = Vec::new();
-        let segment_hash = segment_files.map(|mut s| {
-            let bmff_hash = BmffHash::from_assertion(dh_assertion).unwrap();
-            // let mut ex = bmff_hash.exclusions_mut();
-            // ex = init_hash[0].exclusions_mut();
-            let hash = bmff_hash.create_stream_segment_hash(&mut s, None).unwrap();
-            merkle::MerkleNode(hash)
-        });
-        println!("boatinit  : {:?}", init_hash);
+        let segment_hash = segment_files
+            .map(|mut s| {
+                let mut bmff_hash = BmffHash::from_assertion(dh_assertion).unwrap();
+                // let hash = bmff_hash.create_stream_segment_hash(&mut s, None).unwrap();
+                bmff_hash.gen_hash_from_stream(&mut s).unwrap();
+                // println!("\n\n boat[] : {:?}\n\n", bmff_hash.hash().unwrap());
+                bmff_hash
+                // merkle::MerkleNode(hash)
+            })
+            .map(|x| x.hash().unwrap().clone())
+            .to_vec();
+
+        println!("boatinit  : {:?}\n", init_hash);
+        println!("boatinit  : {:?}\n", bmff_hash.hash());
         println!("\n\n boat[] : {:?}\n\n", segment_hash);
-        let merkle_tree =
-            merkle::C2PAMerkleTree::from_leaves(segment_hash.to_vec(), "sha256", false);
-        println!("\n\nMerkle layers : {:?}\n\n", merkle_tree.layers);
-        println!("\n\nMerkle layers : {:?}\n\n", merkle_tree.leaves);
-        println!(
-            "\n\nMerkle Proof : {:?}\n\n",
-            merkle_tree.get_proof_by_index(0)
-        );
+        // let merkle_tree =
+        //     merkle::C2PAMerkleTree::from_leaves(&segment_hash.to_vec(), "sha256", false);
+        // println!("\n\nMerkle layers : {:?}\n\n", merkle_tree.layers);
+        // println!("\n\nMerkle layers : {:?}\n\n", merkle_tree.leaves);
+        // println!(
+        //     "\n\nMerkle Proof : {:?}\n\n",
+        //     merkle_tree.get_proof_by_index(0)
+        // );
         assert_ne!(
             merkle::MerkleNode([0, 1, 2, 3, 4, 5, 6].to_vec()),
             merkle::MerkleNode([0, 1, 2, 3, 4, 5].to_vec())
         );
+    }
+
+    #[test]
+    fn test_adobe_fragment() {
+        let test_segment = [
+            merkle::MerkleNode(
+                [
+                    219, 80, 132, 41, 133, 15, 223, 155, 56, 231, 18, 146, 20, 104, 18, 201, 163,
+                    35, 123, 225, 21, 142, 210, 90, 164, 239, 60, 192, 250, 193, 102, 251,
+                ]
+                .to_vec(),
+            ),
+            merkle::MerkleNode(
+                [
+                    37, 170, 235, 160, 132, 82, 20, 64, 2, 135, 107, 69, 221, 196, 192, 147, 63,
+                    13, 63, 70, 177, 89, 71, 188, 3, 131, 18, 88, 168, 195, 54, 115,
+                ]
+                .to_vec(),
+            ),
+            merkle::MerkleNode(
+                [
+                    114, 175, 64, 129, 126, 204, 93, 207, 142, 120, 254, 132, 7, 51, 11, 161, 177,
+                    113, 219, 206, 191, 30, 165, 248, 187, 108, 137, 118, 199, 132, 59, 224,
+                ]
+                .to_vec(),
+            ),
+            merkle::MerkleNode(
+                [
+                    8, 66, 138, 244, 228, 175, 149, 74, 250, 182, 243, 17, 50, 139, 180, 188, 141,
+                    13, 173, 180, 106, 134, 19, 237, 15, 252, 188, 162, 173, 61, 87, 117,
+                ]
+                .to_vec(),
+            ),
+            merkle::MerkleNode(
+                [
+                    151, 43, 206, 153, 48, 32, 74, 218, 81, 16, 233, 94, 246, 209, 76, 133, 180,
+                    168, 13, 153, 105, 147, 227, 210, 38, 244, 197, 34, 164, 224, 138, 131,
+                ]
+                .to_vec(),
+            ),
+            merkle::MerkleNode(
+                [
+                    200, 172, 113, 192, 215, 244, 43, 58, 69, 198, 218, 155, 93, 17, 67, 195, 65,
+                    43, 112, 7, 20, 81, 201, 28, 167, 94, 174, 5, 25, 10, 143, 222,
+                ]
+                .to_vec(),
+            ),
+        ];
+        let test_merkle_tree =
+            merkle::C2PAMerkleTree::from_leaves(test_segment.to_vec(), "sha256", false);
+        println!("\n\nMerkle layers : {:?}\n\n", test_merkle_tree.layers);
+        println!(
+            "\n\nMerkle layers : {:?}\n\n",
+            test_merkle_tree.get_proof_by_index(0)
+        );
+        println!("\n\nMerkle layers : {:?}\n\n", test_merkle_tree.get_root());
     }
 }

@@ -748,15 +748,14 @@ impl BmffHash {
         if let Some(mm_vec) = self.merkle() {
             // get merkle boxes from segment
             let c2pa_boxes = read_bmff_c2pa_boxes(fragment_stream)?;
-            // println!(
-            //     "{}:{}, c2pa_boxes.box_infos: {:?}\n",
-            //     file!(),
-            //     line!(),
-            //     c2pa_boxes.box_infos
-            // );
 
             let bmff_merkle = c2pa_boxes.bmff_merkle;
-
+            // println!(
+            //     "\n{}:{}, bmff_merkle: {:?}\n",
+            //     file!(),
+            //     line!(),
+            //     bmff_merkle
+            // );
             if bmff_merkle.is_empty() {
                 return Err(Error::HashMismatch("Fragment had no MerkleMap".to_string()));
             }
@@ -939,10 +938,10 @@ pub mod tests {
             asset_io::AssetIO, status_tracker::DetailedStatusTracker, store::Store,
         };
 
-        let init_stream_path = fixture_path("fragment/boatinit.mp4");
-        let segment_stream_path = fixture_path("fragment/boat1.m4s");
-        let segment_stream_path10 = fixture_path("fragment/boat2.m4s");
-        let segment_stream_path11 = fixture_path("fragment/boat3.m4s");
+        let init_stream_path = fixture_path("fragmented/boatinit.mp4");
+        let segment_stream_path = fixture_path("fragmented/boat1.m4s");
+        let segment_stream_path10 = fixture_path("fragmented/boat2.m4s");
+        let segment_stream_path11 = fixture_path("fragmented/boat3.m4s");
 
         let mut init_stream = std::fs::File::open(init_stream_path).unwrap();
         let mut segment_stream = std::fs::File::open(segment_stream_path).unwrap();
@@ -951,12 +950,13 @@ pub mod tests {
 
         let mut log = DetailedStatusTracker::default();
 
-        let bmff_io: BmffIO = BmffIO::new("mp4");
+        let bmff_io = BmffIO::new("mp4");
+
         let bmff_handler = bmff_io.get_reader();
 
         let manifest_bytes = bmff_handler.read_cai(&mut init_stream).unwrap();
         let store = Store::from_jumbf(&manifest_bytes, &mut log).unwrap();
-
+        println!("claim.hash_assertions() : {:?}", store);
         // get the bmff hashes
         let claim = store.provenance_claim().unwrap();
         for dh_assertion in claim.hash_assertions() {

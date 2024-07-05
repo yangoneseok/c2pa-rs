@@ -1376,7 +1376,6 @@ impl CAIWriter for BmffIO {
 
         let (mut bmff_tree, root_token) = Arena::with_data(root_box);
         let mut bmff_map: HashMap<String, Vec<Token>> = HashMap::new();
-
         // build layout of the BMFF structure
         build_bmff_tree(
             input_stream,
@@ -1386,9 +1385,24 @@ impl CAIWriter for BmffIO {
             &mut bmff_map,
         )?;
 
+        let mut is_manifest = true;
+        // let ftyp_token: &Vec<Token> = bmff_map.get(boxtype).ok_or(Error::UnsupportedType)?;
+        let ftyp_token: &Vec<Token> = match bmff_map.get("/ftyp") {
+            Some(ftyp) => ftyp,
+            _ => match bmff_map.get("/styp") {
+                Some(styp) => {
+                    is_manifest = false;
+                    styp
+                }
+                None => {
+                    return Err(Error::UnsupportedType);
+                }
+            },
+        };
+
         // get ftyp location
         // start after ftyp
-        let ftyp_token = bmff_map.get("/ftyp").ok_or(Error::UnsupportedType)?; // todo check ftyps to make sure we support any special format requirements
+        // let ftyp_token = bmff_map.get("/ftyp").ok_or(Error::UnsupportedType)?; // todo check ftyps to make sure we support any special format requirements
         let ftyp_info = &bmff_tree[ftyp_token[0]].data;
         let ftyp_offset = ftyp_info.offset;
         let ftyp_size = ftyp_info.size;
@@ -1405,7 +1419,7 @@ impl CAIWriter for BmffIO {
 
         let mut new_c2pa_box: Vec<u8> = Vec::with_capacity(store_bytes.len() * 2);
         let merkle_data: &[u8] = &[]; // not yet supported
-        write_c2pa_box(&mut new_c2pa_box, store_bytes, true, merkle_data)?;
+        write_c2pa_box(&mut new_c2pa_box, store_bytes, is_manifest, merkle_data)?;
         let new_c2pa_box_size = new_c2pa_box.len();
 
         let (start, end) = if let Some(c2pa_length) = c2pa_length {

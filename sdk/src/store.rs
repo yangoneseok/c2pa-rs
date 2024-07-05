@@ -1718,7 +1718,7 @@ impl Store {
                 _ => return Err(Error::UnsupportedType),
             }
         }
-        println!("{}:{}, dh:{:?}", file!(), line!(), dh);
+
         hashes.push(dh);
 
         Ok(hashes)
@@ -2047,12 +2047,14 @@ impl Store {
         )?;
 
         let pc = self.provenance_claim().ok_or(Error::ClaimEncoding)?;
+
         let sig = if _sync {
             self.sign_claim(pc, signer, signer.reserve_size())
         } else {
             self.sign_claim_async(pc, signer, signer.reserve_size())
                 .await
         }?;
+
         let sig_placeholder = Store::sign_claim_placeholder(pc, signer.reserve_size());
 
         intermediate_stream.rewind()?;

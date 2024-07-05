@@ -724,7 +724,7 @@ impl Builder {
         R: Read + Seek + Send,
         W: Write + Read + Seek + Send,
     {
-        let format = format_to_mime(format);
+        let format: String = format_to_mime(format);
         self.definition.format.clone_from(&format);
         // todo:: read instance_id from xmp from stream ?
         self.definition.instance_id = format!("xmp:iid:{}", Uuid::new_v4());
@@ -742,6 +742,52 @@ impl Builder {
         } else {
             store
                 .save_to_stream_async(&format, source, dest, signer)
+                .await
+        }
+    }
+
+    #[async_generic(async_signature(
+        &mut self,
+        signer: &dyn AsyncSigner,
+        format: &str,
+        sources: &mut Vec< R>,
+        dest_list: &mut Vec< W>,
+    ))]
+    pub fn fragments_mp4_sign<R, W>(
+        &mut self,
+        signer: &dyn Signer,
+        format: &str,
+        sources: &mut Vec<R>,
+        dest_list: &mut Vec<W>,
+    ) -> Result<Vec<u8>>
+    where
+        R: Read + Seek + Send,
+        W: Write + Read + Seek + Send,
+    {
+        // let format: Option<&'static str> = match format {
+        //     "fmp4" => Some("video/mp4"),
+        //     _ => None,
+        // };
+        // let format = format.ok_or(Error::UnsupportedType)?.to_string();
+        let format: String = format_to_mime(format);
+
+        self.definition.format.clone_from(&format);
+        // todo:: read instance_id from xmp from stream ?
+        self.definition.instance_id = format!("xmp:iid:{}", Uuid::new_v4());
+
+        // generate thumbnail if we don't already have one
+        // #[cfg(feature = "add_thumbnails")]
+        // self.maybe_add_thumbnail(&format, source)?;
+
+        // convert the manifest to a store
+        let mut store = self.to_store()?;
+
+        // sign and write our store to to the output image file
+        if _sync {
+            store.save_to_stream(&format, &mut sources[0], &mut dest_list[0], signer)
+        } else {
+            store
+                .save_to_stream_async(&format, &mut sources[0], &mut dest_list[0], signer)
                 .await
         }
     }
@@ -800,7 +846,13 @@ mod tests {
     use wasm_bindgen_test::*;
 
     use super::*;
-    use crate::{utils::test::temp_signer, Reader};
+    use crate::{
+        utils::test::{
+            // fixture_path,
+            temp_signer,
+        },
+        Reader,
+    };
     #[cfg(target_arch = "wasm32")]
     wasm_bindgen_test::wasm_bindgen_test_configure!(run_in_browser);
 
@@ -1158,6 +1210,7 @@ mod tests {
 
         // sign the ManifestStoreBuilder and write it to the output stream
         let signer = temp_signer();
+        println!("{:?}", &signer.as_ref().certs());
         let manifest_data = builder
             .sign(signer.as_ref(), "image/jpeg", &mut source, &mut dest)
             .unwrap();
@@ -1174,5 +1227,121 @@ mod tests {
 
         println!("{}", reader.json());
         assert!(reader.validation_status().is_none());
+    }
+
+    #[test]
+    #[cfg(feature = "file_io")]
+    fn fragment_mp4_store_manifest() {
+        use serde_json::json;
+
+        fn manifest_def(title: &str, format: &str) -> String {
+            json!({
+                "title": title,
+                "format": format,
+                "claim_generator_info": [
+                    {
+                        "name": "c2pa test",
+                        "version": env!("CARGO_PKG_VERSION")
+                    }
+                ],
+                // "thumbnail": {
+                //     "format": format,
+                //     "identifier": "manifest_thumbnail.jpg"
+                // },
+                "ingredients": [
+                    {
+                        "title": "Test Digicap",
+                        "format": "image/jpeg",
+                        "instance_id": "12345",
+                        "relationship": "inputTo"
+                    }
+                ],
+                "assertions": [
+                    {
+                        "label": "c2pa.actions",
+                        "data": {
+                            "actions": [
+                                {
+                                    "action": "c2pa.edited",
+                                    "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+                                    "softwareAgent": {
+                                        "name": "My AI Tool",
+                                        "version": "0.1.0"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }).to_string()
+        }
+        // const CERTS: &[u8] = include_bytes!("../tests/fixtures/certs/ed25519.pub");
+        // const PRIVATE_KEY: &[u8] = include_bytes!("../tests/fixtures/certs/ed25519.pem");
+        let mut sources = vec![
+            Cursor::new(
+                include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boat1.m4s")
+                    .to_vec(),
+            ),
+            Cursor::new(
+                include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boat2.m4s")
+                    .to_vec(),
+            ),
+            Cursor::new(
+                include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boat3.m4s")
+                    .to_vec(),
+            ),
+            Cursor::new(
+                include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boat4.m4s")
+                    .to_vec(),
+            ),
+            Cursor::new(
+                include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boat5.m4s")
+                    .to_vec(),
+            ),
+            Cursor::new(
+                include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boat6.m4s")
+                    .to_vec(),
+            ),
+        ];
+        // let dest_list = vec![
+        //     Cursor::new("fragmented/fragmented_no_c2pa/boat1_test.m4s"),
+        //     Cursor::new("fragmented/fragmented_no_c2pa/boat2_test.m4s"),
+        //     Cursor::new("fragmented/fragmented_no_c2pa/boat3_test.m4s"),
+        //     Cursor::new("fragmented/fragmented_no_c2pa/boat4_test.m4s"),
+        //     Cursor::new("fragmented/fragmented_no_c2pa/boat5_test.m4s"),
+        //     Cursor::new("fragmented/fragmented_no_c2pa/boat6_test.m4s"),
+        // ];
+        let mut dest_list = vec![
+            Cursor::new(Vec::new()),
+            // Cursor::new(Vec::new()),
+            // Cursor::new(Vec::new()),
+            // Cursor::new(Vec::new()),
+            // Cursor::new(Vec::new()),
+            // Cursor::new(Vec::new()),
+        ];
+
+        let json = manifest_def("Test Manifest", "image/jpeg");
+        let mut builder = Builder::from_json(&json).unwrap();
+        let signer = temp_signer();
+        builder
+            .fragments_mp4_sign(signer.as_ref(), "mp4", &mut sources, &mut dest_list)
+            .unwrap();
+        let manifest_store = Reader::from_stream("mp4", &mut dest_list[0]).expect("from_bytes");
+        println!("{}", manifest_store);
+        save_cursor_to_file(&mut dest_list[0], "output.mp4").unwrap();
+    }
+
+    fn save_cursor_to_file(cursor: &mut Cursor<Vec<u8>>, file_path: &str) -> std::io::Result<()> {
+        // Cursor에서 내부 Vec<u8>을 가져옵니다.
+        use std::fs::File;
+        let buffer = cursor.get_ref();
+
+        // 파일을 생성하거나 엽니다.
+        let mut file = File::create(file_path)?;
+
+        // Vec<u8>의 내용을 파일에 씁니다.
+        file.write_all(buffer)?;
+
+        Ok(())
     }
 }

@@ -28,7 +28,7 @@ use crate::{
     assertions::{BmffMerkleMap, ExclusionsMap},
     asset_io::{
         rename_or_move, AssetIO, AssetPatch, CAIRead, CAIReadWrite, CAIReader, CAIWriter,
-        FragmentIO, HashObjectPositions, RemoteRefEmbed, RemoteRefEmbedType,
+        HashObjectPositions, RemoteRefEmbed, RemoteRefEmbedType,
     },
     error::{Error, Result},
     utils::{
@@ -1212,7 +1212,6 @@ pub(crate) fn read_bmff_c2pa_boxes(reader: &mut dyn CAIRead) -> Result<C2PABmffB
                         } else if vec_compare(&purpose, MERKLE.as_bytes()) {
                             let mut merkle = vec![0u8; data_len as usize];
                             reader.read_exact(&mut merkle)?;
-
                             // strip trailing zeros
                             loop {
                                 if !merkle.is_empty() && merkle[merkle.len() - 1] == 0 {
@@ -1225,7 +1224,10 @@ pub(crate) fn read_bmff_c2pa_boxes(reader: &mut dyn CAIRead) -> Result<C2PABmffB
                             }
 
                             // find uuid from uuid list
+                            // let a: Claim = serde_cbor::from_slice(&merkle)?;
+                            // println!("여긴어디: {:?}", a);
                             let mm: BmffMerkleMap = serde_cbor::from_slice(&merkle)?;
+                            println!("여긴어디: {}:{}", file!(), line!());
                             merkle_boxes.push(mm);
                         }
                     } else if vec_compare(&XMP_UUID, uuid) {
@@ -1261,7 +1263,7 @@ pub(crate) fn read_bmff_c2pa_boxes(reader: &mut dyn CAIRead) -> Result<C2PABmffB
 impl CAIReader for BmffIO {
     fn read_cai(&self, reader: &mut dyn CAIRead) -> Result<Vec<u8>> {
         let c2pa_boxes = read_bmff_c2pa_boxes(reader)?;
-
+        println!("여긴어디: {}:{}", file!(), line!());
         c2pa_boxes.manifest_bytes.ok_or(Error::JumbfNotFound)
     }
 
@@ -1384,16 +1386,13 @@ impl CAIWriter for BmffIO {
             &root_token,
             &mut bmff_map,
         )?;
-
-        let mut is_manifest = true;
+        let _is_segment = bmff_map.contains_key("/mdat");
+        let is_manifest = bmff_map.contains_key("/ftyp");
         // let ftyp_token: &Vec<Token> = bmff_map.get(boxtype).ok_or(Error::UnsupportedType)?;
         let ftyp_token: &Vec<Token> = match bmff_map.get("/ftyp") {
             Some(ftyp) => ftyp,
             _ => match bmff_map.get("/styp") {
-                Some(styp) => {
-                    is_manifest = false;
-                    styp
-                }
+                Some(styp) => styp,
                 None => {
                     return Err(Error::UnsupportedType);
                 }
@@ -1868,178 +1867,6 @@ impl RemoteRefEmbed for BmffIO {
     }
 }
 
-impl FragmentIO for BmffIO {
-    fn fragment_write_cai(
-        &self,
-        input_stream: &mut dyn CAIRead,
-        output_stream: &mut dyn CAIReadWrite,
-        store_bytes: &[u8],
-        is_manifest: bool,
-        merkle_data: &[u8],
-    ) -> Result<()> {
-        let size = input_stream.seek(SeekFrom::End(0))?;
-        input_stream.rewind()?;
-
-        // create root node
-        let root_box = BoxInfo {
-            path: "".to_string(),
-            offset: 0,
-            size,
-            box_type: BoxType::Empty,
-            parent: None,
-            user_type: None,
-            version: None,
-            flags: None,
-        };
-
-        let (mut bmff_tree, root_token) = Arena::with_data(root_box);
-        let mut bmff_map: HashMap<String, Vec<Token>> = HashMap::new();
-
-        // build layout of the BMFF structure
-        build_bmff_tree(
-            input_stream,
-            size,
-            &mut bmff_tree,
-            &root_token,
-            &mut bmff_map,
-        )?;
-
-        // get ftyp location
-        // start after ftyp
-        let mut boxtype = "/ftyp";
-        if !is_manifest {
-            boxtype = "/styp"
-        }
-
-        let ftyp_token: &Vec<Token> = bmff_map.get(boxtype).ok_or(Error::UnsupportedType)?; // todo check ftyps to make sure we support any special format requirements
-        let ftyp_info = &bmff_tree[ftyp_token[0]].data;
-        let ftyp_offset = ftyp_info.offset;
-        let ftyp_size = ftyp_info.size;
-
-        // get position to insert c2pa
-        let (c2pa_start, c2pa_length) =
-            if let Some(c2pa_token) = get_uuid_token(&bmff_tree, &bmff_map, &C2PA_UUID) {
-                let uuid_info = &bmff_tree[c2pa_token].data;
-
-                (uuid_info.offset, Some(uuid_info.size))
-            } else {
-                ((ftyp_offset + ftyp_size), None)
-            };
-
-        let mut new_c2pa_box: Vec<u8> = Vec::with_capacity(store_bytes.len() * 2);
-        // let merkle_data: &[u8] = merkle_map; // not yet supported
-        write_c2pa_box(&mut new_c2pa_box, store_bytes, is_manifest, merkle_data)?;
-
-        let new_c2pa_box_size = new_c2pa_box.len();
-
-        let (start, end) = if let Some(c2pa_length) = c2pa_length {
-            let start = usize::value_from(c2pa_start)
-                .map_err(|_err| Error::InvalidAsset("value out of range".to_string()))?; // get beginning of chunk which starts 4 bytes before label
-
-            let end = usize::value_from(c2pa_start + c2pa_length)
-                .map_err(|_err| Error::InvalidAsset("value out of range".to_string()))?;
-
-            (start, end)
-        } else {
-            // insert new c2pa
-            let end = usize::value_from(c2pa_start)
-                .map_err(|_err| Error::InvalidAsset("value out of range".to_string()))?;
-
-            (end, end)
-        };
-        println!("{}:{} Boxtype: {}", file!(), line!(), boxtype);
-        // write content before ContentProvenanceBox
-        input_stream.rewind()?;
-        let mut before_manifest = input_stream.take(start as u64);
-        std::io::copy(&mut before_manifest, output_stream)?;
-
-        // write ContentProvenanceBox
-        output_stream.write_all(&new_c2pa_box)?;
-
-        // calc offset adjustments
-        let offset_adjust: i32 = if end == 0 {
-            new_c2pa_box_size as i32
-        } else {
-            // value could be negative if box is truncated
-            let existing_c2pa_box_size = end - start;
-            let pad_size: i32 = new_c2pa_box_size as i32 - existing_c2pa_box_size as i32;
-            pad_size
-        };
-
-        // write content after ContentProvenanceBox
-        input_stream.seek(SeekFrom::Start(end as u64))?;
-        std::io::copy(input_stream, output_stream)?;
-
-        // Manipulating the UUID box means we may need some patch offsets if they are file absolute offsets.
-
-        // create root node
-        let root_box = BoxInfo {
-            path: "".to_string(),
-            offset: 0,
-            size,
-            box_type: BoxType::Empty,
-            parent: None,
-            user_type: None,
-            version: None,
-            flags: None,
-        };
-        println!("{}:{} Boxtype: {}", file!(), line!(), boxtype);
-        // map box layout of current output file
-        let (mut output_bmff_tree, root_token) = Arena::with_data(root_box);
-        let mut output_bmff_map: HashMap<String, Vec<Token>> = HashMap::new();
-
-        let size = output_stream.seek(SeekFrom::End(0))?;
-        output_stream.rewind()?;
-        build_bmff_tree(
-            output_stream,
-            size,
-            &mut output_bmff_tree,
-            &root_token,
-            &mut output_bmff_map,
-        )?;
-        println!("{}:{} Boxtype: {}", file!(), line!(), boxtype);
-        // adjust offsets based on current layout
-        output_stream.rewind()?;
-        adjust_known_offsets(
-            output_stream,
-            &output_bmff_tree,
-            &output_bmff_map,
-            offset_adjust,
-        )
-    }
-
-    fn save_cai_store_fragment(
-        &self,
-        asset_path: &std::path::Path,
-        store_bytes: &[u8],
-        is_manifest: bool,
-        merkle_data: &[u8],
-    ) -> Result<()> {
-        let mut input_stream: File = std::fs::OpenOptions::new()
-            .read(true)
-            .open(asset_path)
-            .map_err(Error::IoError)?;
-
-        let mut temp_file = Builder::new()
-            .prefix("c2pa_temp")
-            .rand_bytes(5)
-            .tempfile()?;
-
-        println!("STart");
-
-        self.fragment_write_cai(
-            &mut input_stream,
-            &mut temp_file,
-            store_bytes,
-            is_manifest,
-            merkle_data,
-        )?;
-
-        // copy temp file to asset
-        rename_or_move(temp_file, asset_path)
-    }
-}
-
 #[cfg(test)]
 pub mod tests {
     #![allow(clippy::expect_used)]
@@ -2207,9 +2034,9 @@ pub mod tests {
         std::fs::copy(source, &output).unwrap();
         let bmff_io = BmffIO::new("mp4");
         let store_bytes = b"test";
-        let is_manifest = false;
+        // let is_manifest = false;
         let merkle_data: [u8; 6] = [1, 2, 3, 4, 5, 6];
-        match bmff_io.save_cai_store_fragment(&output, store_bytes, is_manifest, &merkle_data) {
+        match bmff_io.save_cai_store_fragment(&output, store_bytes, &merkle_data) {
             Err(err) => println!(" {}", err),
             _ => unreachable!(),
         }

@@ -291,15 +291,16 @@ pub trait FragmentIO: Sync + Send {
         input_stream: &mut dyn CAIRead,
         output_stream: &mut dyn CAIReadWrite,
         store_bytes: &[u8],
-        is_manifest: bool,
+        // is_manifest: bool,
         merkle_data: &[u8],
     ) -> Result<()>;
 
     fn save_cai_store_fragment(
         &self,
-        asset_path: &Path,
+        input_stream: &mut dyn CAIRead,
+        output_stream: &mut dyn CAIReadWrite,
         store_bytes: &[u8],
-        is_manifest: bool,
+        // is_manifest: bool,
         merkle_data: &[u8],
     ) -> Result<()>;
 }

@@ -73,7 +73,17 @@ impl ExclusionsMap {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct VecByteBuf(Vec<ByteBuf>);
+pub struct VecByteBuf(pub Vec<ByteBuf>);
+
+// impl VecByteBuf {
+//     pub fn push(&mut self, value: ByteBuf) {
+//         self.0.push(value);
+//     }
+
+//     pub fn get(&self, index: usize) -> Option<&ByteBuf> {
+//         self.0.get(index)
+//     }
+// }
 
 impl Deref for VecByteBuf {
     type Target = Vec<ByteBuf>;
@@ -367,7 +377,12 @@ impl BmffHash {
         };
 
         let bmff_exclusions = &self.exclusions;
-
+        println!(
+            "{}:{}, bmff_exclusions: {:?}",
+            file!(),
+            line!(),
+            bmff_exclusions
+        );
         // convert BMFF exclusion map to flat exclusion list
         let exclusions =
             bmff_to_jumbf_exclusions(asset_stream, bmff_exclusions, self.bmff_version > 1)?;

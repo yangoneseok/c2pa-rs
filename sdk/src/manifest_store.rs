@@ -211,18 +211,20 @@ impl ManifestStore {
         verify: bool,
     ) -> Result<ManifestStore> {
         let mut validation_log = DetailedStatusTracker::new();
-
         let manifest_bytes = Store::load_jumbf_from_stream(format, &mut stream)?;
+        println!("{}, {:?}", line!(), manifest_bytes);
         let store = Store::from_jumbf(&manifest_bytes, &mut validation_log)?;
         if verify {
             // verify store and claims
             if _sync {
+                println!("씽크!!1");
                 Store::verify_store(
                     &store,
                     &mut ClaimAssetData::Stream(&mut stream, format),
                     &mut validation_log,
                 )?;
             } else {
+                println!("으씽크!!1");
                 Store::verify_store_async(
                     &store,
                     &mut ClaimAssetData::Stream(&mut stream, format),
@@ -231,6 +233,7 @@ impl ManifestStore {
                 .await?;
             }
         }
+        println!("{},{:?}", line!(), &validation_log.get_log());
         Ok(Self::from_store(store, &validation_log))
     }
 

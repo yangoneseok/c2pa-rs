@@ -20,6 +20,7 @@ use std::{fs, path::Path};
 
 use async_generic::async_generic;
 use log::error;
+use serde_json::json;
 
 #[cfg(feature = "file_io")]
 use crate::jumbf_io::{
@@ -32,10 +33,13 @@ use crate::{
     },
     assertions::{
         labels::{self, CLAIM},
-        BmffHash, DataBox, DataHash, DataMap, ExclusionsMap, Ingredient, Relationship, SubsetMap,
+        BmffHash, BmffMerkleMap, DataBox, DataHash, DataMap, ExclusionsMap, Ingredient,
+        Relationship, SubsetMap, VecByteBuf,
     },
+    asset_handlers::segment_bmff_io::SegmentBmffIO,
     asset_io::{
-        CAIRead, CAIReadWrite, HashBlockObjectType, HashObjectPositions, RemoteRefEmbedType,
+        AssetIO, CAIRead, CAIReadWrite, HashBlockObjectType, HashObjectPositions,
+        RemoteRefEmbedType,
     },
     claim::{Claim, ClaimAssertion, ClaimAssetData, RemoteManifest},
     cose_sign::{cose_sign, cose_sign_async},
@@ -59,9 +63,10 @@ use crate::{
     trust_handler::TrustHandlerConfig,
     utils::{
         hash_utils::{hash_sha256, HashRange},
+        merkle::C2PAMerkleTree,
         patch::patch_bytes,
     },
-    validation_status, AsyncSigner, RemoteSigner, Signer,
+    validation_status, AsyncSigner, FragmentIO, RemoteSigner, Signer,
 };
 
 const MANIFEST_STORE_EXT: &str = "c2pa"; // file extension for external manifests
@@ -77,6 +82,7 @@ pub struct Store {
     label: String,
     provenance_path: Option<String>,
     trust_handler: Box<dyn TrustHandlerConfig>,
+    merklemap: Option<C2PAMerkleTree>,
 }
 
 struct ManifestInfo<'a> {
@@ -110,7 +116,6 @@ impl Store {
     pub fn new() -> Self {
         Self::new_with_label(MANIFEST_STORE_EXT)
     }
-
     /// Create a new, empty claims store with a custom label.
     ///
     /// In most cases, calling [`Store::new()`] is preferred.
@@ -127,6 +132,7 @@ impl Store {
             #[cfg(all(not(feature = "openssl"), not(target_arch = "wasm32")))]
             trust_handler: Box::new(crate::trust_handler::TrustPassThrough::new()),
             provenance_path: None,
+            merklemap: None,
         };
 
         // load the trust handler settings, don't worry about status as these are checked during setting generation
@@ -283,6 +289,11 @@ impl Store {
         self.claims_map.insert(claim_label.clone(), index);
 
         Ok(claim_label)
+    }
+    pub fn commit_merkle_tree(&mut self, claim: C2PAMerkleTree) -> Result<String> {
+        self.merklemap = Some(claim);
+
+        Ok("dd".to_string())
     }
 
     /// Add a new update manifest to this Store. The manifest label
@@ -1710,6 +1721,127 @@ impl Store {
 
         if calc_hashes {
             dh.gen_hash_from_stream(asset_stream)?;
+            println!(
+                "여긴어디: {}:{}, hashping {:?}",
+                file!(),
+                line!(),
+                dh.hash()
+            );
+        } else {
+            match alg {
+                "sha256" => dh.set_hash([0u8; 32].to_vec()),
+                "sha384" => dh.set_hash([0u8; 48].to_vec()),
+                "sha512" => dh.set_hash([0u8; 64].to_vec()),
+                _ => return Err(Error::UnsupportedType),
+            }
+        }
+
+        hashes.push(dh);
+
+        Ok(hashes)
+    }
+
+    pub fn generate_bmff_data_hashes_for_stream_merkle(
+        asset_stream: &mut dyn CAIRead,
+        alg: &str,
+        calc_hashes: bool,
+    ) -> Result<Vec<BmffHash>> {
+        use serde_bytes::ByteBuf;
+
+        // The spec has mandatory BMFF exclusion ranges for certain atoms.
+        // The function makes sure those are included.
+
+        let mut hashes: Vec<BmffHash> = Vec::new();
+
+        let mut dh: BmffHash = BmffHash::new("jumbf manifest", alg, None);
+        let exclusions = dh.exclusions_mut();
+
+        // jumbf exclusion
+        let mut uuid = ExclusionsMap::new("/uuid".to_owned());
+        let data = DataMap {
+            offset: 8,
+            value: vec![
+                216, 254, 195, 214, 27, 14, 72, 60, 146, 151, 88, 40, 135, 126, 196, 129,
+            ], // C2PA identifier
+        };
+        let data_vec = vec![data];
+        uuid.data = Some(data_vec);
+        exclusions.push(uuid);
+
+        // ftyp exclusion
+        let ftyp = ExclusionsMap::new("/ftyp".to_owned());
+        exclusions.push(ftyp);
+
+        // meta/iloc exclusion
+        let iloc = ExclusionsMap::new("/meta/iloc".to_owned());
+        exclusions.push(iloc);
+
+        // /mfra/tfra exclusion
+        let tfra = ExclusionsMap::new("/mfra/tfra".to_owned());
+        exclusions.push(tfra);
+
+        // /moov/trak/mdia/minf/stbl/stco exclusion
+        let mut stco = ExclusionsMap::new("/moov/trak/mdia/minf/stbl/stco".to_owned());
+        let subset_stco = SubsetMap {
+            offset: 16,
+            length: 0,
+        };
+        let subset_stco_vec = vec![subset_stco];
+        stco.subset = Some(subset_stco_vec);
+        exclusions.push(stco);
+
+        // /moov/trak/mdia/minf/stbl/co64 exclusion
+        let mut co64 = ExclusionsMap::new("/moov/trak/mdia/minf/stbl/co64".to_owned());
+        let subset_co64 = SubsetMap {
+            offset: 16,
+            length: 0,
+        };
+        let subset_co64_vec = vec![subset_co64];
+        co64.subset = Some(subset_co64_vec);
+        exclusions.push(co64);
+
+        // /moof/traf/tfhd exclusion
+        let mut tfhd = ExclusionsMap::new("/moof/traf/tfhd".to_owned());
+        let subset_tfhd = SubsetMap {
+            offset: 16,
+            length: 8,
+        };
+        let subset_tfhd_vec = vec![subset_tfhd];
+        tfhd.subset = Some(subset_tfhd_vec);
+        tfhd.flags = Some(ByteBuf::from([1, 0, 0]));
+        exclusions.push(tfhd);
+
+        // /moof/traf/trun exclusion
+        let mut trun = ExclusionsMap::new("/moof/traf/trun".to_owned());
+        let subset_trun = SubsetMap {
+            offset: 16,
+            length: 4,
+        };
+        let subset_trun_vec = vec![subset_trun];
+        trun.subset = Some(subset_trun_vec);
+        trun.flags = Some(ByteBuf::from([1, 0, 0]));
+        exclusions.push(trun);
+
+        // V2 exclusions
+        //  Enable this when we support Merkle trees and fragmented MP4
+        // /mdat exclusion
+        // let mut mdat = ExclusionsMap::new("/mdat".to_owned());
+        // let subset_mdat = SubsetMap {
+        //     offset: 16,
+        //     length: 0,
+        // };
+        // let subset_mdat_vec = vec![subset_mdat];
+        // mdat.subset = Some(subset_mdat_vec);
+        // exclusions.push(mdat);
+
+        if calc_hashes {
+            dh.gen_hash_from_stream(asset_stream)?;
+            println!(
+                "여긴어디: {}:{}, hashping {:?}",
+                file!(),
+                line!(),
+                dh.hash()
+            );
         } else {
             match alg {
                 "sha256" => dh.set_hash([0u8; 32].to_vec()),
@@ -2047,7 +2179,7 @@ impl Store {
         )?;
 
         let pc = self.provenance_claim().ok_or(Error::ClaimEncoding)?;
-
+        println!("여긴어디: {}:{} claimping2: {:?}", file!(), line!(), pc);
         let sig = if _sync {
             self.sign_claim(pc, signer, signer.reserve_size())
         } else {
@@ -2077,6 +2209,34 @@ impl Store {
         }
     }
 
+    pub fn save_to_merkle_stream(
+        &mut self,
+        format: &str,
+        input_stream: &mut dyn CAIRead,
+        output_stream: &mut dyn CAIReadWrite,
+        leaf_index: usize,
+    ) -> Result<()> {
+        // std::fs::copy(input_stream, &output_stream).unwrap();
+        let bmff_io = SegmentBmffIO::new(format);
+        let binding = json!(BmffMerkleMap {
+            unique_id: 1,
+            local_id: 1,
+            location: leaf_index as u32,
+            hashes: Some(VecByteBuf(
+                self.merklemap
+                    .as_ref()
+                    .unwrap()
+                    .get_proof_by_index(leaf_index)
+                    .unwrap(),
+            )),
+        })
+        .to_string();
+        let merkle = binding.as_bytes();
+        match bmff_io.save_cai_store_fragment(input_stream, output_stream, &[0; 0], &merkle) {
+            Ok(_) => Ok(()),
+            Err(e) => Err(e),
+        }
+    }
     /// This function is used to pre-generate a manifest as if it were added to input_stream. All values
     /// are complete including the hash bindings, except for the signature.  The signature is completed during
     /// the actual embedding using `embed_placed_manifest `.   The Signature box reserve_size is based on the size required by
@@ -2508,7 +2668,7 @@ impl Store {
         let mut intermediate_stream = Cursor::new(intermediate_output);
 
         let pc = self.provenance_claim_mut().ok_or(Error::ClaimEncoding)?;
-
+        // println!("여긴어디: {}:{} claimping {:?}", file!(), line!(), pc);
         // Add remote reference XMP if needed and strip out existing manifest
         // We don't need to strip manifests if we are replacing an exsiting one
         let (url, remove_manifests) = match pc.remote_manifest() {
@@ -3414,6 +3574,7 @@ pub mod tests {
     use std::io::Write;
 
     use memchr::memmem;
+    use serde_bytes::ByteBuf;
     use sha2::{Digest, Sha256};
     use tempfile::tempdir;
 
@@ -5802,54 +5963,51 @@ pub mod tests {
         //     "\n\nMerkle Proof : {:?}\n\n",
         //     merkle_tree.get_proof_by_index(0)
         // );
-        assert_ne!(
-            merkle::MerkleNode([0, 1, 2, 3, 4, 5, 6].to_vec()),
-            merkle::MerkleNode([0, 1, 2, 3, 4, 5].to_vec())
-        );
+        assert_ne!([0, 1, 2, 3, 4, 5, 6], [0, 1, 2, 3, 4, 5, 0]);
     }
 
     #[test]
     fn test_adobe_fragment() {
         let test_segment = [
-            merkle::MerkleNode(
+            ByteBuf::from(
                 [
                     219, 80, 132, 41, 133, 15, 223, 155, 56, 231, 18, 146, 20, 104, 18, 201, 163,
                     35, 123, 225, 21, 142, 210, 90, 164, 239, 60, 192, 250, 193, 102, 251,
                 ]
                 .to_vec(),
             ),
-            merkle::MerkleNode(
-                [
-                    37, 170, 235, 160, 132, 82, 20, 64, 2, 135, 107, 69, 221, 196, 192, 147, 63,
-                    13, 63, 70, 177, 89, 71, 188, 3, 131, 18, 88, 168, 195, 54, 115,
-                ]
-                .to_vec(),
-            ),
-            merkle::MerkleNode(
+            ByteBuf::from(
                 [
                     114, 175, 64, 129, 126, 204, 93, 207, 142, 120, 254, 132, 7, 51, 11, 161, 177,
                     113, 219, 206, 191, 30, 165, 248, 187, 108, 137, 118, 199, 132, 59, 224,
                 ]
                 .to_vec(),
             ),
-            merkle::MerkleNode(
+            ByteBuf::from(
                 [
-                    8, 66, 138, 244, 228, 175, 149, 74, 250, 182, 243, 17, 50, 139, 180, 188, 141,
-                    13, 173, 180, 106, 134, 19, 237, 15, 252, 188, 162, 173, 61, 87, 117,
+                    37, 170, 235, 160, 132, 82, 20, 64, 2, 135, 107, 69, 221, 196, 192, 147, 63,
+                    13, 63, 70, 177, 89, 71, 188, 3, 131, 18, 88, 168, 195, 54, 115,
                 ]
                 .to_vec(),
             ),
-            merkle::MerkleNode(
+            ByteBuf::from(
+                [
+                    200, 172, 113, 192, 215, 244, 43, 58, 69, 198, 218, 155, 93, 17, 67, 195, 65,
+                    43, 112, 7, 20, 81, 201, 28, 167, 94, 174, 5, 25, 10, 143, 222,
+                ]
+                .to_vec(),
+            ),
+            ByteBuf::from(
                 [
                     151, 43, 206, 153, 48, 32, 74, 218, 81, 16, 233, 94, 246, 209, 76, 133, 180,
                     168, 13, 153, 105, 147, 227, 210, 38, 244, 197, 34, 164, 224, 138, 131,
                 ]
                 .to_vec(),
             ),
-            merkle::MerkleNode(
+            ByteBuf::from(
                 [
-                    200, 172, 113, 192, 215, 244, 43, 58, 69, 198, 218, 155, 93, 17, 67, 195, 65,
-                    43, 112, 7, 20, 81, 201, 28, 167, 94, 174, 5, 25, 10, 143, 222,
+                    8, 66, 138, 244, 228, 175, 149, 74, 250, 182, 243, 17, 50, 139, 180, 188, 141,
+                    13, 173, 180, 106, 134, 19, 237, 15, 252, 188, 162, 173, 61, 87, 117,
                 ]
                 .to_vec(),
             ),

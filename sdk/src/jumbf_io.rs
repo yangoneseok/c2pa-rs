@@ -108,10 +108,12 @@ pub fn load_jumbf_from_memory(asset_type: &str, data: &[u8]) -> Result<Vec<u8>> 
 
 /// Return jumbf block from stream asset
 pub fn load_jumbf_from_stream(asset_type: &str, input_stream: &mut dyn CAIRead) -> Result<Vec<u8>> {
+    println!("여긴어디: {}:{}", file!(), line!());
     let cai_block = match get_cailoader_handler(asset_type) {
         Some(asset_handler) => asset_handler.read_cai(input_stream)?,
         None => return Err(Error::UnsupportedType),
     };
+    println!("여긴어디: {}:{} , CAI {:?}", file!(), line!(), cai_block);
     if cai_block.is_empty() {
         return Err(Error::JumbfNotFound);
     }

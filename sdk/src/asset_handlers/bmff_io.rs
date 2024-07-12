@@ -1204,7 +1204,7 @@ pub(crate) fn read_bmff_c2pa_boxes(reader: &mut dyn CAIRead) -> Result<C2PABmffB
                             } else {
                                 return Err(Error::TooManyManifestStores);
                             }
-
+                            println!("여긴어디: {}:{} ,{:?}", file!(), line!(), buf);
                             // if contains offset this asset contains additional UUID boxes
                             if offset != 0 {
                                 _first_aux_uuid = offset;
@@ -1212,6 +1212,7 @@ pub(crate) fn read_bmff_c2pa_boxes(reader: &mut dyn CAIRead) -> Result<C2PABmffB
                         } else if vec_compare(&purpose, MERKLE.as_bytes()) {
                             let mut merkle = vec![0u8; data_len as usize];
                             reader.read_exact(&mut merkle)?;
+                            println!("Merkle {:?}", merkle);
                             // strip trailing zeros
                             loop {
                                 if !merkle.is_empty() && merkle[merkle.len() - 1] == 0 {
@@ -1227,7 +1228,7 @@ pub(crate) fn read_bmff_c2pa_boxes(reader: &mut dyn CAIRead) -> Result<C2PABmffB
                             // let a: Claim = serde_cbor::from_slice(&merkle)?;
                             // println!("여긴어디: {:?}", a);
                             let mm: BmffMerkleMap = serde_cbor::from_slice(&merkle)?;
-                            println!("여긴어디: {}:{}", file!(), line!());
+                            println!("여긴어디: {}:{} ,{:?}", file!(), line!(), mm);
                             merkle_boxes.push(mm);
                         }
                     } else if vec_compare(&XMP_UUID, uuid) {
@@ -1363,7 +1364,6 @@ impl CAIWriter for BmffIO {
     ) -> Result<()> {
         let size = input_stream.seek(SeekFrom::End(0))?;
         input_stream.rewind()?;
-
         // create root node
         let root_box = BoxInfo {
             path: "".to_string(),
@@ -2023,27 +2023,27 @@ pub mod tests {
         }
     }
 
-    #[test]
-    fn test_fragment_c2pa() {
-        let source = fixture_path("fragmented/fragmented_no_c2pa/boat1.m4s");
-        let output = fixture_path("fragmented/fragmented_no_c2pa/boat1_test.m4s");
+    // #[test]
+    // fn test_fragment_c2pa() {
+    //     let source = fixture_path("fragmented/fragmented_no_c2pa/boat1.m4s");
+    //     let output = fixture_path("fragmented/fragmented_no_c2pa/boat1_test.m4s");
 
-        // let temp_dir = tempdir().unwrap();
-        // let output = temp_dir_path(&temp_dir, "mp4_test.mp4");
+    //     // let temp_dir = tempdir().unwrap();
+    //     // let output = temp_dir_path(&temp_dir, "mp4_test.mp4");
 
-        std::fs::copy(source, &output).unwrap();
-        let bmff_io = BmffIO::new("mp4");
-        let store_bytes = b"test";
-        // let is_manifest = false;
-        let merkle_data: [u8; 6] = [1, 2, 3, 4, 5, 6];
-        match bmff_io.save_cai_store_fragment(&output, store_bytes, &merkle_data) {
-            Err(err) => println!(" {}", err),
-            _ => unreachable!(),
-        }
-        // read back in asset, JumbfNotFound is expected since it was removed
-        match bmff_io.read_cai_store(&output) {
-            Err(Error::JumbfNotFound) => println!(""),
-            _ => unreachable!(),
-        }
-    }
+    //     std::fs::copy(source, &output).unwrap();
+    //     let bmff_io = BmffIO::new("mp4");
+    //     let store_bytes = b"test";
+    //     // let is_manifest = false;
+    //     let merkle_data: [u8; 6] = [1, 2, 3, 4, 5, 6];
+    //     match bmff_io.save_cai_store_fragment(&output, store_bytes, &merkle_data) {
+    //         Err(err) => println!(" {}", err),
+    //         _ => unreachable!(),
+    //     }
+    //     // read back in asset, JumbfNotFound is expected since it was removed
+    //     match bmff_io.read_cai_store(&output) {
+    //         Err(Error::JumbfNotFound) => println!(""),
+    //         _ => unreachable!(),
+    //     }
+    // }
 }

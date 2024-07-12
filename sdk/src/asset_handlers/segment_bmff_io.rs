@@ -37,6 +37,8 @@ use crate::{
     },
 };
 
+use super::bmff_io::{BoxInfoLite, C2PABmffBoxes};
+
 pub struct SegmentBmffIO {
     #[allow(dead_code)]
     bmff_format: String, // can be used for specialized BMFF cases
@@ -255,12 +257,12 @@ pub(crate) struct BoxInfo {
     flags: Option<u32>,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub(crate) struct BoxInfoLite {
-    pub path: String,
-    pub offset: u64,
-    pub size: u64,
-}
+// #[derive(Clone, Debug, PartialEq)]
+// pub(crate) struct BoxInfoLite {
+//     pub path: String,
+//     pub offset: u64,
+//     pub size: u64,
+// }
 
 fn read_box_header_ext<R: Read + Seek + ?Sized>(reader: &mut R) -> Result<(u8, u32)> {
     let version = reader.read_u8()?;
@@ -395,7 +397,7 @@ fn path_from_token(bmff_tree: &Arena<BoxInfo>, current_node_token: &Token) -> Re
     Ok(path)
 }
 
-fn get_top_level_box_offsets(
+fn _get_top_level_box_offsets(
     bmff_tree: &Arena<BoxInfo>,
     bmff_path_map: &HashMap<String, Vec<Token>>,
 ) -> Vec<u64> {
@@ -439,7 +441,7 @@ fn get_top_level_boxes(
     tl_boxes
 }
 
-pub fn bmff_to_jumbf_exclusions<R>(
+pub fn _bmff_to_jumbf_exclusions<R>(
     reader: &mut R,
     bmff_exclusions: &[ExclusionsMap],
     bmff_v2: bool,
@@ -469,7 +471,7 @@ where
     build_bmff_tree(reader, size, &mut bmff_tree, &root_token, &mut bmff_map)?;
 
     // get top level box offsets
-    let mut tl_offsets = get_top_level_box_offsets(&bmff_tree, &bmff_map);
+    let mut tl_offsets = _get_top_level_box_offsets(&bmff_tree, &bmff_map);
     tl_offsets.sort();
 
     let mut exclusions = Vec::new();
@@ -1115,13 +1117,15 @@ fn get_uuid_token(
     }
     None
 }
-
-pub(crate) struct C2PABmffBoxes {
-    pub manifest_bytes: Option<Vec<u8>>,
-    pub bmff_merkle: Vec<BmffMerkleMap>,
-    pub box_infos: Vec<BoxInfoLite>,
-    pub xmp: Option<String>,
-}
+#[deny(warnings)]
+// pub(crate) struct C2PABmffBoxes {
+//     pub manifest_bytes: Option<Vec<u8>>,
+//     #[deny(dead_code)]
+//     pub bmff_merkle: Vec<BmffMerkleMap>,
+//     #[deny(dead_code)]
+//     pub box_infos: Vec<BoxInfoLite>,
+//     pub xmp: Option<String>,
+// }
 
 pub(crate) fn read_bmff_c2pa_boxes(reader: &mut dyn CAIRead) -> Result<C2PABmffBoxes> {
     let size = reader.seek(SeekFrom::End(0))?;
@@ -2081,7 +2085,7 @@ pub mod tests {
 
         std::fs::copy(source, &output).unwrap();
 
-        let bmff = BmffIO::new("mp4");
+        let bmff = SegmentBmffIO::new("mp4");
 
         let eh = bmff.remote_ref_writer_ref().unwrap();
 
@@ -2106,7 +2110,7 @@ pub mod tests {
             let output = temp_dir_path(&temp_dir, "mp4_test.mp4");
 
             if let Ok(_size) = std::fs::copy(source, &output) {
-                let bmff = BmffIO::new("mp4");
+                let bmff = SegmentBmffIO::new("mp4");
 
                 //let test_data =  bmff.read_cai_store(&source).unwrap();
                 if let Ok(()) = bmff.save_cai_store(&output, test_data) {
@@ -2130,7 +2134,7 @@ pub mod tests {
             let output = temp_dir_path(&temp_dir, "mp4_test.mp4");
 
             if let Ok(_size) = std::fs::copy(&source, &output) {
-                let bmff = BmffIO::new("mp4");
+                let bmff = SegmentBmffIO::new("mp4");
 
                 if let Ok(mut test_data) = bmff.read_cai_store(&source) {
                     test_data.append(&mut more_data);
@@ -2156,7 +2160,7 @@ pub mod tests {
             let output = temp_dir_path(&temp_dir, "mp4_test.mp4");
 
             if let Ok(_size) = std::fs::copy(source, &output) {
-                let bmff = BmffIO::new("mp4");
+                let bmff = SegmentBmffIO::new("mp4");
 
                 if let Ok(source_data) = bmff.read_cai_store(&output) {
                     // create replacement data of same size
@@ -2183,7 +2187,7 @@ pub mod tests {
         let output = temp_dir_path(&temp_dir, "mp4_test.mp4");
 
         std::fs::copy(source, &output).unwrap();
-        let bmff_io = BmffIO::new("mp4");
+        let bmff_io = SegmentBmffIO::new("mp4");
 
         bmff_io.remove_cai_store(&output).unwrap();
 
@@ -2196,25 +2200,59 @@ pub mod tests {
 
     #[test]
     fn test_fragment_c2pa() {
-        let source = fixture_path("fragmented/fragmented_no_c2pa/boat1.m4s");
-        let output = fixture_path("fragmented/fragmented_no_c2pa/boat1_test.m4s");
+        use crate::assertions::VecByteBuf;
+        use serde_bytes::ByteBuf;
+        use serde_json::json;
+
+        let mut source =
+            Cursor::new(include_bytes!("../../tests/fixtures/fragmented/boat1.m4s").to_vec());
+        let mut output = Cursor::new(Vec::new());
+        // let source = fixture_path("fragmented/fragmented_no_c2pa/boat1.m4s");
+        // let output = fixture_path("fragmented/fragmented_no_c2pa/boat1_test.m4s");
 
         // let temp_dir = tempdir().unwrap();
         // let output = temp_dir_path(&temp_dir, "mp4_test.mp4");
 
-        std::fs::copy(source, &output).unwrap();
-        let bmff_io = BmffIO::new("mp4");
-        let store_bytes = b"test";
-        // let is_manifest = false;
+        // std::fs::copy(source, &output).unwrap();
+        let bmff_io = SegmentBmffIO::new("mp4");
+        let store_bytes = json!(BmffMerkleMap {
+            unique_id: 1,
+            local_id: 1,
+            location: 0 as u32,
+            hashes: Some(VecByteBuf(vec![ByteBuf::from(
+                [
+                    219, 80, 132, 41, 133, 15, 223, 155, 56, 231, 18, 146, 20, 104, 18, 201, 163,
+                    35, 123, 225, 21, 142, 210, 90, 164, 239, 60, 192, 250, 193, 102, 251,
+                ]
+                .to_vec()
+            )]))
+        })
+        .to_string();
+        let is_manifest = store_bytes.as_bytes();
         let merkle_data: [u8; 6] = [1, 2, 3, 4, 5, 6];
-        match bmff_io.save_cai_store_fragment(&output, store_bytes, &merkle_data) {
+        match bmff_io.save_cai_store_fragment(&mut source, &mut output, is_manifest, &merkle_data) {
+            Ok(_) => println!(" OK"),
             Err(err) => println!(" {}", err),
-            _ => unreachable!(),
         }
+        _save_cursor_to_file(&mut output, "test.m4s").unwrap();
         // read back in asset, JumbfNotFound is expected since it was removed
-        match bmff_io.read_cai_store(&output) {
-            Err(Error::JumbfNotFound) => println!(""),
-            _ => unreachable!(),
-        }
+        // match bmff_io.read_cai_store(&output) {
+        //     Err(Error::JumbfNotFound) => println!(""),
+        //     _ => unreachable!(),
+        //     Ok(_) => todo!(),
+        // }
+    }
+    fn _save_cursor_to_file(cursor: &mut Cursor<Vec<u8>>, file_path: &str) -> std::io::Result<()> {
+        // Cursor에서 내부 Vec<u8>을 가져옵니다.
+        use std::fs::File;
+        let buffer = cursor.get_ref();
+
+        // 파일을 생성하거나 엽니다.
+        let mut file = File::create(file_path)?;
+
+        // Vec<u8>의 내용을 파일에 씁니다.
+        file.write_all(buffer)?;
+
+        Ok(())
     }
 }

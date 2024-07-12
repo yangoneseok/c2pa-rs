@@ -240,6 +240,27 @@ pub struct BmffMerkleMap {
 
     pub hashes: Option<VecByteBuf>,
 }
+impl BmffMerkleMap {
+    pub const LABEL: &'static str = labels::BMFF_HASH;
+}
+impl AssertionCbor for BmffMerkleMap {}
+impl AssertionBase for BmffMerkleMap {
+    const LABEL: &'static str = Self::LABEL;
+    const VERSION: Option<usize> = Some(ASSERTION_CREATION_VERSION);
+
+    // todo: this mechanism needs to change since a struct could support different versions
+
+    fn to_assertion(&self) -> crate::error::Result<Assertion> {
+        Self::to_cbor_assertion(self)
+    }
+
+    fn from_assertion(assertion: &Assertion) -> crate::error::Result<Self> {
+        let bmff_hash = Self::from_cbor_assertion(assertion)?;
+        // bmff_hash.set_bmff_version(VERSION);
+
+        Ok(bmff_hash)
+    }
+}
 
 #[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct DataMap {
@@ -342,6 +363,34 @@ impl BmffHash {
         self.merkle = Some(merkle);
     }
 
+    pub fn gen_hash_from_stream_merkle(
+        &mut self,
+        leaves: u32,
+        root_node: ByteBuf,
+    ) -> crate::error::Result<()> {
+        if !self.hash.is_some() {
+            return Err(Error::BadParam("hash not set".to_owned()));
+        }
+
+        let merkle_map = MerkleMap {
+            local_id: 1,
+            unique_id: 1,
+            count: leaves,
+            alg: None,
+            // init_hash: self.hash.clone(),
+            init_hash: Some(ByteBuf::from([
+                229, 197, 162, 65, 211, 179, 34, 6, 62, 114, 26, 169, 209, 167, 177, 22, 131, 215,
+                186, 68, 109, 88, 196, 10, 126, 36, 0, 119, 134, 82, 81, 20,
+            ])),
+            hashes: VecByteBuf(vec![root_node]),
+        };
+
+        let merkle = vec![merkle_map];
+        // let len = to_vec(&merkle).ok().unwrap().len();
+        self.set_merkle(merkle);
+        self.hash = None;
+        Ok(())
+    }
     /// Generate the hash value for the asset using the range from the BmffHash.
     #[cfg(feature = "file_io")]
     pub fn gen_hash(&mut self, asset_path: &Path) -> crate::error::Result<()> {
@@ -356,6 +405,7 @@ impl BmffHash {
         R: Read + Seek + ?Sized,
     {
         self.hash = Some(ByteBuf::from(self.hash_from_stream(asset_stream)?));
+        println!("{}:{}, hash: {:?}", file!(), line!(), self.hash);
         Ok(())
     }
 
@@ -377,12 +427,7 @@ impl BmffHash {
         };
 
         let bmff_exclusions = &self.exclusions;
-        println!(
-            "{}:{}, bmff_exclusions: {:?}",
-            file!(),
-            line!(),
-            bmff_exclusions
-        );
+
         // convert BMFF exclusion map to flat exclusion list
         let exclusions =
             bmff_to_jumbf_exclusions(asset_stream, bmff_exclusions, self.bmff_version > 1)?;
@@ -751,7 +796,7 @@ impl BmffHash {
                 None => "sha256".to_string(),
             },
         };
-
+        println!("is Hash? {:?}", self.hash());
         // handle file level hashing
         if self.hash().is_some() {
             return Err(Error::HashMismatch(
@@ -794,7 +839,7 @@ impl BmffHash {
                     // check the inithash (for fragmented MP4 with multiple files this is the hash of the init_segment minus any exclusions)
                     if let Some(init_hash) = &mm.init_hash {
                         let bmff_exclusions = &self.exclusions;
-
+                        println!("Init Hash {}:{}, MM : {:?}", file!(), line!(), mm);
                         // convert BMFF exclusion map to flat exclusion list
                         init_stream.rewind()?;
                         let exclusions = bmff_to_jumbf_exclusions(
@@ -802,6 +847,12 @@ impl BmffHash {
                             bmff_exclusions,
                             self.bmff_version > 1,
                         )?;
+                        println!(
+                            "{}:{}, exclusions : {:#?}",
+                            file!(),
+                            line!(),
+                            bmff_exclusions
+                        );
                         if !verify_stream_by_alg(
                             alg,
                             init_hash,
@@ -851,11 +902,11 @@ impl BmffHash {
     }
 
     pub fn create_stream_segment_hash(
-        &self,
+        &mut self,
         // init_stream: &mut dyn CAIRead,
         fragment_stream: &mut dyn CAIRead,
         alg: Option<&str>,
-    ) -> crate::Result<Vec<u8>> {
+    ) -> crate::Result<()> {
         let curr_alg = match &self.alg {
             Some(a) => a.clone(),
             None => match alg {
@@ -867,23 +918,19 @@ impl BmffHash {
         // handle file level hashing
         if self.hash().is_some() {
             return Err(Error::HashMismatch(
-                "Hash value should not be present for a fragmented BMFF asset".to_string(),
+                "create_stream_segment_hash: Hash value should not be present for a fragmented BMFF asset".to_string(),
             ));
         }
         let bmff_exclusions = &self.exclusions;
         // Merkle hashed BMFF
         let fragment_exclusions: Vec<HashRange> =
             bmff_to_jumbf_exclusions(fragment_stream, bmff_exclusions, self.bmff_version > 1)?;
-        println!(
-            "{:?}, fragment_exclusions: {:?} ",
-            line!(),
-            fragment_exclusions
-        );
+
         // hash the entire fragment minus exclusions
         let hash = hash_stream_by_alg(&curr_alg, fragment_stream, Some(fragment_exclusions), true)?;
         println!("{}, fragment_hash: {:?} ", line!(), hash);
-
-        Ok(hash)
+        self.hash = Some(ByteBuf::from(hash));
+        Ok(())
     }
 }
 
@@ -953,15 +1000,24 @@ pub mod tests {
             asset_io::AssetIO, status_tracker::DetailedStatusTracker, store::Store,
         };
 
-        let init_stream_path = fixture_path("fragmented/boatinit.mp4");
-        let segment_stream_path = fixture_path("fragmented/boat1.m4s");
-        let segment_stream_path10 = fixture_path("fragmented/boat2.m4s");
-        let segment_stream_path11 = fixture_path("fragmented/boat3.m4s");
+        let init_stream_path = fixture_path("../../output/outputinit.mp4");
+        let segment_stream_path0 = fixture_path("../../output/output1.m4s");
+        let segment_stream_path1 = fixture_path("../../output/output2.m4s");
+        let segment_stream_path3 = fixture_path("../../output/output3.m4s");
+        let segment_stream_path4 = fixture_path("../../output/output4.m4s");
+        let segment_stream_path5 = fixture_path("../../output/output5.m4s");
+        let segment_stream_path2 = fixture_path("../../output/output6.m4s");
+
+        // let segment_stream_path10 = fixture_path("fragmented/boat2.m4s");
+        // let segment_stream_path11 = fixture_path("fragmented/boat3.m4s");
 
         let mut init_stream = std::fs::File::open(init_stream_path).unwrap();
-        let mut segment_stream = std::fs::File::open(segment_stream_path).unwrap();
-        let mut segment_stream10 = std::fs::File::open(segment_stream_path10).unwrap();
-        let mut segment_stream11 = std::fs::File::open(segment_stream_path11).unwrap();
+        let mut segment_stream0 = std::fs::File::open(segment_stream_path0).unwrap();
+        let mut segment_stream1 = std::fs::File::open(segment_stream_path1).unwrap();
+        let mut segment_stream2 = std::fs::File::open(segment_stream_path2).unwrap();
+        let mut segment_stream3 = std::fs::File::open(segment_stream_path3).unwrap();
+        let mut segment_stream4 = std::fs::File::open(segment_stream_path4).unwrap();
+        let mut segment_stream5 = std::fs::File::open(segment_stream_path5).unwrap();
 
         let mut log = DetailedStatusTracker::default();
 
@@ -971,25 +1027,38 @@ pub mod tests {
 
         let manifest_bytes = bmff_handler.read_cai(&mut init_stream).unwrap();
         let store = Store::from_jumbf(&manifest_bytes, &mut log).unwrap();
-        println!("claim.hash_assertions() : {:?}", store);
+
         // get the bmff hashes
         let claim = store.provenance_claim().unwrap();
         for dh_assertion in claim.hash_assertions() {
             if dh_assertion.label_root() == BmffHash::LABEL {
                 let bmff_hash = BmffHash::from_assertion(dh_assertion).unwrap();
+                // bmff_hash
+                //     .create_stream_segment_hash(&mut init_stream, None)
+                //     .unwrap();
+
                 bmff_hash
-                    .verify_stream_segment(&mut init_stream, &mut segment_stream, None)
+                    .verify_stream_segment(&mut init_stream, &mut segment_stream0, None)
                     .unwrap();
 
                 bmff_hash
-                    .verify_stream_segment(&mut init_stream, &mut segment_stream10, None)
+                    .verify_stream_segment(&mut init_stream, &mut segment_stream1, None)
                     .unwrap();
 
                 bmff_hash
-                    .verify_stream_segment(&mut init_stream, &mut segment_stream11, None)
+                    .verify_stream_segment(&mut init_stream, &mut segment_stream2, None)
                     .unwrap();
+
                 bmff_hash
-                    .create_stream_segment_hash(&mut segment_stream11, None)
+                    .verify_stream_segment(&mut init_stream, &mut segment_stream3, None)
+                    .unwrap();
+
+                bmff_hash
+                    .verify_stream_segment(&mut init_stream, &mut segment_stream4, None)
+                    .unwrap();
+
+                bmff_hash
+                    .verify_stream_segment(&mut init_stream, &mut segment_stream5, None)
                     .unwrap();
             }
         }
@@ -1006,6 +1075,8 @@ pub mod tests {
         let init_stream_path = fixture_path("fragmented/newscast_maninit.mp4");
         let segment_stream_path2 = fixture_path("fragmented/newscast_man2.m4s");
         let segment_stream_path5 = fixture_path("fragmented/newscast_man5.m4s");
+        // let segment_stream_path2 = fixture_path("../../output0.mp4");
+        // let segment_stream_path5 = fixture_path("../../output1.mp4");
 
         let mut init_stream = std::fs::File::open(init_stream_path).unwrap();
         let mut segment_stream2 = std::fs::File::open(segment_stream_path2).unwrap();

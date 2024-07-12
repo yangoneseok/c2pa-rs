@@ -20,7 +20,6 @@ use std::{fs, path::Path};
 
 use async_generic::async_generic;
 use log::error;
-use serde_json::json;
 
 #[cfg(feature = "file_io")]
 use crate::jumbf_io::{
@@ -166,6 +165,10 @@ impl Store {
     /// Return label for the store
     pub fn label(&self) -> &str {
         &self.label
+    }
+
+    pub fn merkle(&self) -> &C2PAMerkleTree {
+        self.merklemap.as_ref().unwrap()
     }
 
     /// Load set of trust anchors used for certificate validation. [u8] containing the
@@ -1836,12 +1839,6 @@ impl Store {
 
         if calc_hashes {
             dh.gen_hash_from_stream(asset_stream)?;
-            println!(
-                "여긴어디: {}:{}, hashping {:?}",
-                file!(),
-                line!(),
-                dh.hash()
-            );
         } else {
             match alg {
                 "sha256" => dh.set_hash([0u8; 32].to_vec()),
@@ -2177,16 +2174,16 @@ impl Store {
             &mut intermediate_stream,
             signer.reserve_size(),
         )?;
-
         let pc = self.provenance_claim().ok_or(Error::ClaimEncoding)?;
-        println!("여긴어디: {}:{} claimping2: {:?}", file!(), line!(), pc);
+        println!("{}:{}, store.get_claim {:?}", file!(), line!(), pc);
         let sig = if _sync {
             self.sign_claim(pc, signer, signer.reserve_size())
         } else {
             self.sign_claim_async(pc, signer, signer.reserve_size())
                 .await
         }?;
-
+        // let mm = self.get_claim(labels::BMFF_HASH).unwrap();
+        // println!("store.get_claim {:?}", mm);
         let sig_placeholder = Store::sign_claim_placeholder(pc, signer.reserve_size());
 
         intermediate_stream.rewind()?;
@@ -2215,10 +2212,10 @@ impl Store {
         input_stream: &mut dyn CAIRead,
         output_stream: &mut dyn CAIReadWrite,
         leaf_index: usize,
-    ) -> Result<()> {
+    ) -> Result<Vec<u8>> {
         // std::fs::copy(input_stream, &output_stream).unwrap();
         let bmff_io = SegmentBmffIO::new(format);
-        let binding = json!(BmffMerkleMap {
+        let mm = &BmffMerkleMap {
             unique_id: 1,
             local_id: 1,
             location: leaf_index as u32,
@@ -2229,11 +2226,14 @@ impl Store {
                     .get_proof_by_index(leaf_index)
                     .unwrap(),
             )),
-        })
-        .to_string();
-        let merkle = binding.as_bytes();
-        match bmff_io.save_cai_store_fragment(input_stream, output_stream, &[0; 0], &merkle) {
-            Ok(_) => Ok(()),
+        };
+
+        let binding = mm.to_assertion().expect("should serialize");
+
+        // let merkle_bytes = merkle_json.as_bytes();
+        match bmff_io.save_cai_store_fragment(input_stream, output_stream, &[0; 0], &binding.data())
+        {
+            Ok(_) => Ok(Vec::new()),
             Err(e) => Err(e),
         }
     }
@@ -2668,7 +2668,7 @@ impl Store {
         let mut intermediate_stream = Cursor::new(intermediate_output);
 
         let pc = self.provenance_claim_mut().ok_or(Error::ClaimEncoding)?;
-        // println!("여긴어디: {}:{} claimping {:?}", file!(), line!(), pc);
+
         // Add remote reference XMP if needed and strip out existing manifest
         // We don't need to strip manifests if we are replacing an exsiting one
         let (url, remove_manifests) = match pc.remote_manifest() {
@@ -2745,7 +2745,7 @@ impl Store {
             // and write preliminary jumbf store to file
             // source and dest the same so save_jumbf_to_file will use the same file since we have already cloned
             data = self.to_jumbf_internal(reserve_size)?;
-            jumbf_size = data.len();
+            // jumbf_size = data.len();
             // write the jumbf to the output stream if we are embedding the manifest
             if !remove_manifests {
                 intermediate_stream.rewind()?;
@@ -2755,17 +2755,36 @@ impl Store {
                 intermediate_stream.rewind()?;
                 std::io::copy(&mut intermediate_stream, output_stream)?;
             }
-
+            let merkle = self.merkle().clone();
             // generate actual hash values
+            println!("\n여긴어디: {}:{}, merkle\n", file!(), line!());
             let pc = self.provenance_claim_mut().ok_or(Error::ClaimEncoding)?; // reborrow to change mutability
-
+            println!(
+                "\n여긴어디: {}:{}, provenance_claim_mut {:?}\n",
+                file!(),
+                line!(),
+                pc
+            );
             if !pc.update_manifest() {
                 let bmff_hashes = pc.bmff_hash_assertions();
 
                 if !bmff_hashes.is_empty() {
                     let mut bmff_hash = BmffHash::from_assertion(bmff_hashes[0])?;
                     output_stream.rewind()?;
-                    bmff_hash.gen_hash_from_stream(output_stream)?;
+                    // bmff_hash.gen_hash_from_stream(output_stream)?;
+                    // bmff_hash
+                    //     .create_stream_segment_hash(input_stream, None)
+                    //     .unwrap();
+                    bmff_hash.gen_hash_from_stream_merkle(
+                        merkle.leaves.len() as u32,
+                        merkle.get_root().unwrap().clone(),
+                    )?;
+                    println!(
+                        "여긴어디: {}:{}, update_bmff_hash {:?}",
+                        file!(),
+                        line!(),
+                        bmff_hash,
+                    );
                     pc.update_bmff_hash(bmff_hash)?;
                 }
             }
@@ -2800,7 +2819,7 @@ impl Store {
 
             // 3) Generate in memory CAI jumbf block
             data = self.to_jumbf_internal(reserve_size)?;
-            jumbf_size = data.len();
+            // jumbf_size = data.len();
 
             // write the jumbf to the output stream if we are embedding the manifest
             if !remove_manifests {
@@ -2827,7 +2846,12 @@ impl Store {
                         &mut new_hash_ranges,
                         true,
                     )?;
-
+                    println!(
+                        "여긴어디: {}:{} updated_hashes {:?}",
+                        file!(),
+                        line!(),
+                        updated_hashes
+                    );
                     // patch existing claim hash with updated data
                     for hash in updated_hashes {
                         pc.update_data_hash(hash)?;
@@ -2838,6 +2862,7 @@ impl Store {
 
         // regenerate the jumbf because the cbor changed
         data = self.to_jumbf_internal(reserve_size)?;
+        jumbf_size = data.len();
         if jumbf_size != data.len() {
             return Err(Error::JumbfCreationError);
         }
@@ -2860,7 +2885,6 @@ impl Store {
 
         patch_bytes(&mut jumbf_bytes, sig_placeholder, &sig)
             .map_err(|_| Error::JumbfCreationError)?;
-
         // re-save to file
         let pc = self.provenance_claim().ok_or(Error::ClaimEncoding)?;
         match pc.remote_manifest() {

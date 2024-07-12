@@ -449,6 +449,7 @@ where
     R: Read + Seek + ?Sized,
 {
     if let Ok(data_hash) = hash_stream_by_alg(alg, reader, hash_range, is_exclusion) {
+        println!("hash: {:?}", &data_hash);
         vec_compare(hash, &data_hash)
     } else {
         false

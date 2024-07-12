@@ -27,7 +27,8 @@ use zip::{write::FileOptions, ZipArchive, ZipWriter};
 use crate::{
     assertion::AssertionBase,
     assertions::{
-        labels, Actions, CreativeWork, Exif, Metadata, SoftwareAgent, Thumbnail, User, UserCbor,
+        labels::{self},
+        Actions, CreativeWork, Exif, MerkleMap, Metadata, SoftwareAgent, Thumbnail, User, UserCbor,
     },
     claim::Claim,
     error::{Error, Result},
@@ -212,6 +213,7 @@ pub struct Builder {
 
     /// Options Segments BmffMerkleMap
     pub segments_bmff_mm: Option<C2PAMerkleTree>,
+    pub init_bmff_mm: Option<MerkleMap>,
 }
 
 impl AsRef<Builder> for Builder {
@@ -228,36 +230,48 @@ impl Builder {
         let hashes = segments
             .iter_mut()
             .map(|x| -> ByteBuf {
-                // let hash = bmff_hash.create_stream_segment_hash(&mut x, None).unwrap();
-                // let mut bmff_hash = BmffHash::new("TEST Digicap", , None);
-                // bmff_hash.gen_hash_from_stream(x).unwrap();
-                // let mut hashes: ByteBuf;
-                let mut bmff_hash =
+                let bmff_hash =
                     Store::generate_bmff_data_hashes_for_stream_merkle(x, "sha256", true).unwrap();
-                // for hash in bmff_hash {
-                //     ByteBuf::from(hash.hash().unwrap().clone())
-                // }
-
-                ByteBuf::from(bmff_hash.pop().unwrap().hash().unwrap().clone())
-                // hashes
-                // println!("\n\n boat[] : {:?}\n\n", bmff_hash.hash().unwrap());
+                ByteBuf::from(bmff_hash[0].hash().unwrap().to_owned())
             })
             .collect::<Vec<ByteBuf>>();
-        // println!("{:?}", hashes);
 
-        // let mut value = Vec::new();
-        // for i in 0..segments.len() {
-        //     let proof_hashes = merkle_tree.get_proof_by_index(i).unwrap();
-        //     value.push(BmffMerkleMap {
-        //         unique_id: 1,
-        //         local_id: 1,
-        //         location: i as u32,
-        //         hashes: Some(VecByteBuf(proof_hashes)),
-        //     });
-        //     println!("{:?}\n", value[i]);
-        // }
         self.segments_bmff_mm = Some(C2PAMerkleTree::from_leaves(hashes, "sha256", false));
         println!("{:?}\n", self.segments_bmff_mm);
+        Ok(())
+    }
+
+    pub fn set_init_merklemap<R>(&mut self, _segment: &mut R, count: u32) -> Result<()>
+    where
+        R: Read + Seek + Send + Sized,
+    {
+        // let bmff_hash =
+        //     match Store::generate_bmff_data_hashes_for_stream_merkle(segment, "sha256", true) {
+        //         Ok(mut m) => m.pop(),
+        //         Err(_) => return Err(Error::HashMismatch("MerkleMap count incorrect".to_string())),
+        //     };
+
+        let root = self
+            .segments_bmff_mm
+            .as_ref()
+            .and_then(|mm| mm.get_root())
+            .cloned()
+            .expect("Failed to get root");
+        let init_bmff_mm = MerkleMap {
+            local_id: 1,
+            unique_id: 1,
+            count,
+            alg: None,
+            // init_hash: Some(ByteBuf::from(bmff_hash.unwrap().hash().unwrap().clone())),
+            init_hash: Some(ByteBuf::from([
+                175, 23, 119, 157, 3, 169, 191, 138, 166, 200, 37, 97, 59, 254, 247, 181, 84, 189,
+                192, 185, 15, 139, 154, 100, 231, 14, 21, 85, 123, 145, 182, 156,
+            ])),
+            hashes: crate::assertions::VecByteBuf(vec![root]),
+        };
+
+        self.init_bmff_mm = Some(init_bmff_mm);
+        // println!("{:?}\n", self.init_bmff_mm);
         Ok(())
     }
 
@@ -711,28 +725,23 @@ impl Builder {
     // Convert a Manifest into a Store
     fn to_store(&self) -> Result<Store> {
         let claim = self.to_claim()?;
-        // let merkletree = self.to_segment_list()?;
         // commit the claims
+        // let bmff_hash = BmffHash::new("Digicap", "sha256", None);
+
         let mut store: Store = Store::new();
-        // if let Some(segments_bmff_mm) = &self.segments_bmff_mm {
-        //    store._set_merkle_tree(segments_bmff_mm.clone());
-        // }
         let _provenance = store.commit_claim(claim)?;
+        if let Some(segments_bmff_mm) = &self.segments_bmff_mm {
+            let _ = store.commit_merkle_tree(segments_bmff_mm.clone());
+        }
         // store.commit_merkletree(merkletree)?;
         Ok(store)
     }
     // Convert a Merkle into a Store
     fn to_merkle_store(&self) -> Result<Store> {
-        // let merkletree = self.to_segment_list()?;
-        // commit the claims
-        // let _claim = self._to_merkle_claim(1)?;
         let mut store: Store = Store::new();
         if let Some(segments_bmff_mm) = &self.segments_bmff_mm {
             let _ = store.commit_merkle_tree(segments_bmff_mm.clone());
         }
-        // let _provenance = store.commit_merkle_claim(&self.segments_bmff_mm.unwrap())?;
-        // let _provenance = store.commit_claim(claim)?;
-        // store.commit_merkletree(merkletree)?;
         Ok(store)
     }
     // fn to_segment_list(&self) -> Result<Vec<BmffMerkleMap>> {
@@ -826,14 +835,16 @@ impl Builder {
         signer: &dyn AsyncSigner,
         format: &str,
         init_segment: &mut R,
+        init_dest: &mut W,
         segments: &mut Vec<R>,
-        dest_list: &mut Vec< W>,
+        dest_list: &mut Vec<W>,
     ))]
     pub fn fragments_mp4_sign<R, W>(
         &mut self,
         signer: &dyn Signer,
         format: &str,
         init_segment: &mut R,
+        init_dest: &mut W,
         segments: &mut Vec<R>,
         dest_list: &mut Vec<W>,
     ) -> Result<Vec<u8>>
@@ -858,26 +869,52 @@ impl Builder {
 
         //// 2. Hash 계산
         //// 3.Merkle Tree 생성
+        println!(
+            "Segment Count {}, Dest Count {}\n",
+            segments.len(),
+            dest_list.len()
+        );
+        // let mut init_dest = dest_list.remove(0);
         let _ = self.set_segments(segments);
-
+        let _ = self.set_init_merklemap(init_segment, segments.len() as u32);
         // convert the manifest to a store
         let mut store = self.to_store()?;
+        // store.commit_claim(claim)?;
+        println!(
+            "Segment Count {}, Dest Count {} \n",
+            segments.len(),
+            dest_list.len()
+        );
         if _sync {
-            let _ = store.save_to_stream(&format, init_segment, &mut dest_list[0], signer);
+            let _ = store.save_to_stream(&format, init_segment, init_dest, signer);
         } else {
             let _ = store
-                .save_to_stream_async(&format, init_segment, &mut dest_list[0], signer)
+                .save_to_stream_async(&format, init_segment, init_dest, signer)
                 .await;
         }
+
+        println!("\n\n Fragment \n\n");
         let mut merkle_store = self.to_merkle_store()?;
         // sign and write our store to to the output image file
-        if _sync {
-            merkle_store.save_to_stream(&format, &mut segments[0], &mut dest_list[0], signer)
-        } else {
-            merkle_store
-                .save_to_stream_async(&format, &mut segments[0], &mut dest_list[0], signer)
-                .await
+        for leaf_node in 0..segments.len() {
+            println!("Leaf Node {}\n", leaf_node);
+            if _sync {
+                let _ = merkle_store.save_to_merkle_stream(
+                    &format,
+                    &mut segments[leaf_node],
+                    &mut dest_list[leaf_node],
+                    leaf_node,
+                );
+            } else {
+                let _ = merkle_store.save_to_merkle_stream(
+                    &format,
+                    &mut segments[leaf_node],
+                    &mut dest_list[leaf_node],
+                    leaf_node,
+                );
+            }
         }
+        Ok(vec![])
     }
 
     #[cfg(feature = "file_io")]
@@ -1371,12 +1408,30 @@ mod tests {
             include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boatinit.mp4").to_vec(),
         );
         let mut sources = vec![
-            Cursor::new(include_bytes!("../tests/fixtures/fragmented/boat1.m4s").to_vec()),
-            Cursor::new(include_bytes!("../tests/fixtures/fragmented/boat2.m4s").to_vec()),
-            Cursor::new(include_bytes!("../tests/fixtures/fragmented/boat3.m4s").to_vec()),
-            Cursor::new(include_bytes!("../tests/fixtures/fragmented/boat4.m4s").to_vec()),
-            Cursor::new(include_bytes!("../tests/fixtures/fragmented/boat5.m4s").to_vec()),
-            Cursor::new(include_bytes!("../tests/fixtures/fragmented/boat6.m4s").to_vec()),
+            Cursor::new(
+                include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boat1.m4s")
+                    .to_vec(),
+            ),
+            Cursor::new(
+                include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boat2.m4s")
+                    .to_vec(),
+            ),
+            Cursor::new(
+                include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boat3.m4s")
+                    .to_vec(),
+            ),
+            Cursor::new(
+                include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boat4.m4s")
+                    .to_vec(),
+            ),
+            Cursor::new(
+                include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boat5.m4s")
+                    .to_vec(),
+            ),
+            Cursor::new(
+                include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boat6.m4s")
+                    .to_vec(),
+            ),
         ];
         // let dest_list = vec![
         //     Cursor::new("fragmented/fragmented_no_c2pa/boat1_test.m4s"),
@@ -1386,13 +1441,15 @@ mod tests {
         //     Cursor::new("fragmented/fragmented_no_c2pa/boat5_test.m4s"),
         //     Cursor::new("fragmented/fragmented_no_c2pa/boat6_test.m4s"),
         // ];
+        let mut init_dest = Cursor::new(Vec::new());
         let mut dest_list = vec![
+            // Cursor::new(Vec::new()),
             Cursor::new(Vec::new()),
-            // Cursor::new(Vec::new()),
-            // Cursor::new(Vec::new()),
-            // Cursor::new(Vec::new()),
-            // Cursor::new(Vec::new()),
-            // Cursor::new(Vec::new()),
+            Cursor::new(Vec::new()),
+            Cursor::new(Vec::new()),
+            Cursor::new(Vec::new()),
+            Cursor::new(Vec::new()),
+            Cursor::new(Vec::new()),
         ];
 
         let json = manifest_def("Test Manifest", "image/jpeg");
@@ -1403,16 +1460,23 @@ mod tests {
                 signer.as_ref(),
                 "mp4",
                 &mut init_sources,
+                &mut init_dest,
                 &mut sources,
                 &mut dest_list,
             )
             .unwrap();
-        let manifest_store = Reader::from_stream("mp4", &mut dest_list[0]).expect("from_bytes");
-        println!("{}", manifest_store);
+        _save_cursor_to_file(&init_dest, &format!("./output/outputinit.mp4")).unwrap();
+        for mut leaf in 0..dest_list.len() {
+            leaf += 1;
+            _save_cursor_to_file(&dest_list[leaf - 1], &format!("./output/output{leaf}.m4s"))
+                .unwrap();
+        }
+        // let manifest_store = Reader::from_stream("mp4", &mut dest_list[0]).expect("from_bytes");
+        // println!("{}", manifest_store);
         // save_cursor_to_file(&mut dest_list[0], "output.mp4").unwrap();
     }
 
-    fn _save_cursor_to_file(cursor: &mut Cursor<Vec<u8>>, file_path: &str) -> std::io::Result<()> {
+    fn _save_cursor_to_file(cursor: &Cursor<Vec<u8>>, file_path: &str) -> std::io::Result<()> {
         // Cursor에서 내부 Vec<u8>을 가져옵니다.
         use std::fs::File;
         let buffer = cursor.get_ref();
@@ -1424,5 +1488,76 @@ mod tests {
         file.write_all(buffer)?;
 
         Ok(())
+    }
+    #[test]
+    fn mp4_store_manifest() {
+        use serde_json::json;
+
+        fn manifest_def(title: &str, format: &str) -> String {
+            json!({
+                "title": title,
+                "format": format,
+                "claim_generator_info": [
+                    {
+                        "name": "c2pa test",
+                        "version": env!("CARGO_PKG_VERSION")
+                    }
+                ],
+                // "thumbnail": {
+                //     "format": format,
+                //     "identifier": "manifest_thumbnail.jpg"
+                // },
+                "ingredients": [
+                    {
+                        "title": "Test Digicap",
+                        "format": "image/jpeg",
+                        "instance_id": "12345",
+                        "relationship": "inputTo"
+                    }
+                ],
+                "assertions": [
+                    {
+                        "label": "c2pa.actions",
+                        "data": {
+                            "actions": [
+                                {
+                                    "action": "c2pa.edited",
+                                    "digitalSourceType": "http://cv.iptc.org/newscodes/digitalsourcetype/trainedAlgorithmicMedia",
+                                    "softwareAgent": {
+                                        "name": "My AI Tool",
+                                        "version": "0.1.0"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }).to_string()
+        }
+        // const CERTS: &[u8] = include_bytes!("../tests/fixtures/certs/ed25519.pub");
+        // const PRIVATE_KEY: &[u8] = include_bytes!("../tests/fixtures/certs/ed25519.pem");
+        let mut init_sources = Cursor::new(
+            include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boatinit.mp4").to_vec(),
+        );
+        // let dest_list = vec![
+        //     Cursor::new("fragmented/fragmented_no_c2pa/boat1_test.m4s"),
+        //     Cursor::new("fragmented/fragmented_no_c2pa/boat2_test.m4s"),
+        //     Cursor::new("fragmented/fragmented_no_c2pa/boat3_test.m4s"),
+        //     Cursor::new("fragmented/fragmented_no_c2pa/boat4_test.m4s"),
+        //     Cursor::new("fragmented/fragmented_no_c2pa/boat5_test.m4s"),
+        //     Cursor::new("fragmented/fragmented_no_c2pa/boat6_test.m4s"),
+        // ];
+        let mut init_dest = Cursor::new(Vec::new());
+
+        let json = manifest_def("Test Manifest", "image/jpeg");
+        let mut builder = Builder::from_json(&json).unwrap();
+        let signer = temp_signer();
+        builder
+            .sign(signer.as_ref(), "mp4", &mut init_sources, &mut init_dest)
+            .unwrap();
+        _save_cursor_to_file(&mut init_dest, &format!("./output/outputinit.mp4")).unwrap();
+        // let manifest_store = Reader::from_stream("mp4", &mut dest_list[0]).expect("from_bytes");
+        // println!("{}", manifest_store);
+        // save_cursor_to_file(&mut dest_list[0], "output.mp4").unwrap();
     }
 }

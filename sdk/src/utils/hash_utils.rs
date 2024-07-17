@@ -274,7 +274,6 @@ where
                     // remove any offset hashes that would be excluded
                     let test_ranges = ranges.clone().into_smallvec();
                     bmff_v2_starts.retain(|o| test_ranges.iter().any(|r| r.contains(&(*o + 1))));
-
                     // add in remaining BMFF V2 offsets
                     for os in bmff_v2_starts.iter() {
                         ranges_vec.push(RangeInclusive::new(*os, *os));
@@ -291,7 +290,7 @@ where
                         let b_start = b.start();
                         a_start.cmp(b_start)
                     });
-
+                    println!("{}:{}, ranges_vec: {:?}", file!(), line!(), ranges_vec);
                     ranges_vec
                 } else {
                     for r in ranges.into_smallvec() {
@@ -365,25 +364,38 @@ where
 
             // move to start of range
             data.seek(SeekFrom::Start(*start))?;
+            println!(
+                "\n{}:{}, &start: {:?} &end: {:?}\n",
+                file!(),
+                line!(),
+                &start,
+                &end
+            );
+            // let a = bmff_v2_starts.contains(start);
+            // let b = end - start;
 
             // check to see if this range is an BMFF V2 offset to include in the hash
             if bmff_v2_starts.contains(start) && (end - start) == 0 {
-                hasher_enum.update(&start.to_be_bytes());
+                println!(
+                    "\n{}:{}, &start.to_be_bytes: {:?} \n",
+                    file!(),
+                    line!(),
+                    &start.to_be_bytes(),
+                );
+                // hasher_enum.update(&start.to_be_bytes());
             }
-
+            // let mut test_arr: Vec<u8> = Vec::new();
             let mut chunk = vec![0u8; std::cmp::min(chunk_left as usize, MAX_HASH_BUF)];
             data.read_exact(&mut chunk)?;
-
+            // println!("{}:{}, chunk: {:?}", file!(), line!(), &chunk);
             loop {
                 let (tx, rx) = std::sync::mpsc::channel();
 
                 chunk_left -= chunk.len() as u64;
-
                 std::thread::spawn(move || {
                     hasher_enum.update(&chunk);
                     tx.send(hasher_enum).unwrap_or_default();
                 });
-
                 // are we done
                 if chunk_left == 0 {
                     hasher_enum = match rx.recv() {
@@ -406,7 +418,7 @@ where
             }
         }
     }
-
+    // println!("{}:{}, done hashing {:?}", file!(), line!(), );
     // return the hash
     Ok(Hasher::finalize(hasher_enum))
 }
@@ -449,7 +461,13 @@ where
     R: Read + Seek + ?Sized,
 {
     if let Ok(data_hash) = hash_stream_by_alg(alg, reader, hash_range, is_exclusion) {
-        println!("hash: {:?}", &data_hash);
+        println!(
+            "{}:{}, inithash: {:?}, hash: {:?}",
+            file!(),
+            line!(),
+            hash,
+            &data_hash,
+        );
         vec_compare(hash, &data_hash)
     } else {
         false

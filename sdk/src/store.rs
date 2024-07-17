@@ -32,7 +32,7 @@ use crate::{
     },
     assertions::{
         labels::{self, CLAIM},
-        BmffHash, BmffMerkleMap, DataBox, DataHash, DataMap, ExclusionsMap, Ingredient,
+        BmffHash, BmffMerkleMap, DataBox, DataHash, DataMap, ExclusionsMap, Ingredient, MerkleMap,
         Relationship, SubsetMap, VecByteBuf,
     },
     asset_handlers::segment_bmff_io::SegmentBmffIO,
@@ -1713,19 +1713,19 @@ impl Store {
         // V2 exclusions
         //  Enable this when we support Merkle trees and fragmented MP4
         // /mdat exclusion
-        let mut mdat = ExclusionsMap::new("/mdat".to_owned());
-        let subset_mdat = SubsetMap {
-            offset: 16,
-            length: 0,
-        };
-        let subset_mdat_vec = vec![subset_mdat];
-        mdat.subset = Some(subset_mdat_vec);
-        exclusions.push(mdat);
+        // let mut mdat = ExclusionsMap::new("/mdat".to_owned());
+        // let subset_mdat = SubsetMap {
+        //     offset: 16,
+        //     length: 0,
+        // };
+        // let subset_mdat_vec = vec![subset_mdat];
+        // mdat.subset = Some(subset_mdat_vec);
+        // exclusions.push(mdat);
 
         if calc_hashes {
             dh.gen_hash_from_stream(asset_stream)?;
             println!(
-                "여긴어디: {}:{}, hashping {:?}",
+                "\n여긴어디: {}:{}, hashping {:?}\n",
                 file!(),
                 line!(),
                 dh.hash()
@@ -1745,9 +1745,10 @@ impl Store {
     }
 
     pub fn generate_bmff_data_hashes_for_stream_merkle(
-        asset_stream: &mut dyn CAIRead,
+        asset_stream: &mut dyn CAIReadWrite,
         alg: &str,
         calc_hashes: bool,
+        // is_segment: bool,
     ) -> Result<Vec<BmffHash>> {
         use serde_bytes::ByteBuf;
 
@@ -1840,12 +1841,27 @@ impl Store {
         if calc_hashes {
             dh.gen_hash_from_stream(asset_stream)?;
         } else {
+            let merkle_map = MerkleMap {
+                local_id: 1,
+                unique_id: 1,
+                count: 0,
+                alg: None,
+                init_hash: Some(ByteBuf::from([0u8; 32].to_vec())),
+                hashes: VecByteBuf(vec![ByteBuf::from([0u8; 32].to_vec())]),
+            };
             match alg {
-                "sha256" => dh.set_hash([0u8; 32].to_vec()),
-                "sha384" => dh.set_hash([0u8; 48].to_vec()),
-                "sha512" => dh.set_hash([0u8; 64].to_vec()),
+                "sha256" => dh.set_merkle(vec![merkle_map]),
+                "sha384" => dh.set_merkle(vec![merkle_map]),
+                "sha512" => dh.set_merkle(vec![merkle_map]),
                 _ => return Err(Error::UnsupportedType),
             }
+
+            // match alg {
+            //     "sha256" => dh.set_hash([0u8; 32].to_vec()),
+            //     "sha384" => dh.set_hash([0u8; 48].to_vec()),
+            //     "sha512" => dh.set_hash([0u8; 64].to_vec()),
+            //     _ => return Err(Error::UnsupportedType),
+            // }
         }
 
         hashes.push(dh);
@@ -2668,7 +2684,12 @@ impl Store {
         let mut intermediate_stream = Cursor::new(intermediate_output);
 
         let pc = self.provenance_claim_mut().ok_or(Error::ClaimEncoding)?;
-
+        println!(
+            "\n여긴어디: {}:{}, provenance_claim_mut {:?}\n",
+            file!(),
+            line!(),
+            pc
+        );
         // Add remote reference XMP if needed and strip out existing manifest
         // We don't need to strip manifests if we are replacing an exsiting one
         let (url, remove_manifests) = match pc.remote_manifest() {
@@ -2730,8 +2751,14 @@ impl Store {
         if is_bmff {
             // 2) Get hash ranges if needed, do not generate for update manifests
             if !pc.update_manifest() {
+                println!("\n\nTEST\n\n");
                 intermediate_stream.rewind()?;
-                let bmff_hashes = Store::generate_bmff_data_hashes_for_stream(
+                // let bmff_hashes = Store::generate_bmff_data_hashes_for_stream(
+                //     &mut intermediate_stream,
+                //     pc.alg(),
+                //     false,
+                // )?;
+                let bmff_hashes = Store::generate_bmff_data_hashes_for_stream_merkle(
                     &mut intermediate_stream,
                     pc.alg(),
                     false,
@@ -2772,15 +2799,15 @@ impl Store {
                     let mut bmff_hash = BmffHash::from_assertion(bmff_hashes[0])?;
                     output_stream.rewind()?;
                     // bmff_hash.gen_hash_from_stream(output_stream)?;
-                    // bmff_hash
-                    //     .create_stream_segment_hash(input_stream, None)
-                    //     .unwrap();
+                    bmff_hash
+                        .create_stream_segment_hash(output_stream, None)
+                        .unwrap();
                     bmff_hash.gen_hash_from_stream_merkle(
                         merkle.leaves.len() as u32,
                         merkle.get_root().unwrap().clone(),
                     )?;
                     println!(
-                        "여긴어디: {}:{}, update_bmff_hash {:?}",
+                        "여긴어디: {}:{}, gen_hash_from_stream_merkle {:?}",
                         file!(),
                         line!(),
                         bmff_hash,
@@ -2859,9 +2886,10 @@ impl Store {
                 }
             }
         }
-
+        println!("여긴어디: {}:{}, data {:?} ", file!(), line!(), data.len());
         // regenerate the jumbf because the cbor changed
         data = self.to_jumbf_internal(reserve_size)?;
+        println!("여긴어디: {}:{}, data {:?}", file!(), line!(), data.len());
         jumbf_size = data.len();
         if jumbf_size != data.len() {
             return Err(Error::JumbfCreationError);

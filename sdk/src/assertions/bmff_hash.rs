@@ -42,7 +42,7 @@ use crate::{
         },
         merkle::C2PAMerkleTree,
     },
-    Error,
+    CAIReadWrite, Error,
 };
 
 const ASSERTION_CREATION_VERSION: usize = 2;
@@ -161,6 +161,13 @@ pub struct MerkleMap {
 impl MerkleMap {
     pub fn hash_check(&self, indx: u32, merkle_hash: &[u8]) -> bool {
         if let Some(h) = self.hashes.get(indx as usize) {
+            println!(
+                "{}:{}, h: {:?}, merkle_hash: {:?}",
+                file!(),
+                line!(),
+                h,
+                merkle_hash
+            );
             vec_compare(h, merkle_hash)
         } else {
             false
@@ -360,6 +367,7 @@ impl BmffHash {
     }
 
     pub fn set_merkle(&mut self, merkle: Vec<MerkleMap>) {
+        self.hash = None;
         self.merkle = Some(merkle);
     }
 
@@ -377,11 +385,11 @@ impl BmffHash {
             unique_id: 1,
             count: leaves,
             alg: None,
-            // init_hash: self.hash.clone(),
-            init_hash: Some(ByteBuf::from([
-                229, 197, 162, 65, 211, 179, 34, 6, 62, 114, 26, 169, 209, 167, 177, 22, 131, 215,
-                186, 68, 109, 88, 196, 10, 126, 36, 0, 119, 134, 82, 81, 20,
-            ])),
+            init_hash: self.hash.clone(),
+            // init_hash: Some(ByteBuf::from([
+            //     229, 197, 162, 65, 211, 179, 34, 6, 62, 114, 26, 169, 209, 167, 177, 22, 131, 215,
+            //     186, 68, 109, 88, 196, 10, 126, 36, 0, 119, 134, 82, 81, 20,
+            // ])),
             hashes: VecByteBuf(vec![root_node]),
         };
 
@@ -427,7 +435,12 @@ impl BmffHash {
         };
 
         let bmff_exclusions = &self.exclusions;
-
+        println!(
+            "\n{}:{}, bmff_exclusions: {:?}\n",
+            file!(),
+            line!(),
+            bmff_exclusions
+        );
         // convert BMFF exclusion map to flat exclusion list
         let exclusions =
             bmff_to_jumbf_exclusions(asset_stream, bmff_exclusions, self.bmff_version > 1)?;
@@ -796,7 +809,7 @@ impl BmffHash {
                 None => "sha256".to_string(),
             },
         };
-        println!("is Hash? {:?}", self.hash());
+        println!("\nStart Verify \n");
         // handle file level hashing
         if self.hash().is_some() {
             return Err(Error::HashMismatch(
@@ -810,12 +823,6 @@ impl BmffHash {
             let c2pa_boxes = read_bmff_c2pa_boxes(fragment_stream)?;
 
             let bmff_merkle = c2pa_boxes.bmff_merkle;
-            // println!(
-            //     "\n{}:{}, bmff_merkle: {:?}\n",
-            //     file!(),
-            //     line!(),
-            //     bmff_merkle
-            // );
             if bmff_merkle.is_empty() {
                 return Err(Error::HashMismatch("Fragment had no MerkleMap".to_string()));
             }
@@ -839,7 +846,6 @@ impl BmffHash {
                     // check the inithash (for fragmented MP4 with multiple files this is the hash of the init_segment minus any exclusions)
                     if let Some(init_hash) = &mm.init_hash {
                         let bmff_exclusions = &self.exclusions;
-                        println!("Init Hash {}:{}, MM : {:?}", file!(), line!(), mm);
                         // convert BMFF exclusion map to flat exclusion list
                         init_stream.rewind()?;
                         let exclusions = bmff_to_jumbf_exclusions(
@@ -847,12 +853,7 @@ impl BmffHash {
                             bmff_exclusions,
                             self.bmff_version > 1,
                         )?;
-                        println!(
-                            "{}:{}, exclusions : {:#?}",
-                            file!(),
-                            line!(),
-                            bmff_exclusions
-                        );
+
                         if !verify_stream_by_alg(
                             alg,
                             init_hash,
@@ -869,12 +870,6 @@ impl BmffHash {
                             self.bmff_version > 1,
                         )?;
 
-                        println!(
-                            "{:?}, fragment_exclusions: {:?} ",
-                            line!(),
-                            fragment_exclusions
-                        );
-
                         // hash the entire fragment minus exclusions
                         let hash = hash_stream_by_alg(
                             alg,
@@ -882,7 +877,13 @@ impl BmffHash {
                             Some(fragment_exclusions),
                             true,
                         )?;
-                        println!("{:?}, fragment_hash: {:?} ", line!(), hash);
+                        println!(
+                            "{}:{}, fragment_hash: {:?} \n{:?}\n",
+                            file!(),
+                            line!(),
+                            hash,
+                            &bmff_mm
+                        );
                         // check MerkleMap for the hash
                         if !mm.check_merkle_tree(alg, &hash, bmff_mm.location, &bmff_mm.hashes) {
                             return Err(Error::HashMismatch("Fragment not valid".to_string()));
@@ -904,7 +905,7 @@ impl BmffHash {
     pub fn create_stream_segment_hash(
         &mut self,
         // init_stream: &mut dyn CAIRead,
-        fragment_stream: &mut dyn CAIRead,
+        fragment_stream: &mut dyn CAIReadWrite,
         alg: Option<&str>,
     ) -> crate::Result<()> {
         let curr_alg = match &self.alg {
@@ -916,11 +917,11 @@ impl BmffHash {
         };
 
         // handle file level hashing
-        if self.hash().is_some() {
-            return Err(Error::HashMismatch(
-                "create_stream_segment_hash: Hash value should not be present for a fragmented BMFF asset".to_string(),
-            ));
-        }
+        // if self.hash().is_some() {
+        //     return Err(Error::HashMismatch(
+        //         "create_stream_segment_hash: Hash value should not be present for a fragmented BMFF asset".to_string(),
+        //     ));
+        // }
         let bmff_exclusions = &self.exclusions;
         // Merkle hashed BMFF
         let fragment_exclusions: Vec<HashRange> =
@@ -992,8 +993,9 @@ pub mod tests {
     //use super::*;
     use crate::utils::test::fixture_path;
 
-    #[cfg(not(target_arch = "wasm32"))]
+    // #[cfg(not(target_arch = "wasm32"))]
     #[test]
+    #[cfg(feature = "file_io")]
     fn test_fragemented_mp4() {
         use crate::{
             assertion::AssertionBase, assertions::BmffHash, asset_handlers::bmff_io::BmffIO,
@@ -1103,6 +1105,52 @@ pub mod tests {
 
                 assert!(result2.is_err(), "Expected a verify error");
                 assert!(result5.is_err(), "Expected a verify error");
+            }
+        }
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn test_success_fragemented_mp4() {
+        use crate::{
+            assertion::AssertionBase, assertions::BmffHash, asset_handlers::bmff_io::BmffIO,
+            asset_io::AssetIO, status_tracker::DetailedStatusTracker, store::Store,
+        };
+
+        let init_stream_path = fixture_path("fragmented/boatinit.mp4");
+        // let segment_stream_path2 = fixture_path("fragmented/boat1.m4s");
+        // let segment_stream_path5 = fixture_path("fragmented/boat2.m4s");
+        // let segment_stream_path2 = fixture_path("../../output0.mp4");
+        // let segment_stream_path5 = fixture_path("../../output1.mp4");
+
+        let mut init_stream = std::fs::File::open(init_stream_path).unwrap();
+        // let mut segment_stream2 = std::fs::File::open(segment_stream_path2).unwrap();
+        // let mut segment_stream5 = std::fs::File::open(segment_stream_path5).unwrap();
+
+        let mut log = DetailedStatusTracker::default();
+
+        let bmff_io = BmffIO::new("mp4");
+        let bmff_handler = bmff_io.get_reader();
+
+        let manifest_bytes = bmff_handler.read_cai(&mut init_stream).unwrap();
+        let store = Store::from_jumbf(&manifest_bytes, &mut log).unwrap();
+        let a =
+            Store::generate_bmff_data_hashes_for_stream_merkle(&mut init_stream, "sha256", true);
+        println!("{:?}", a);
+        // get the bmff hashes
+        let claim = store.provenance_claim().unwrap();
+        for dh_assertion in claim.hash_assertions() {
+            if dh_assertion.label_root() == BmffHash::LABEL {
+                let mut bmff_hash = BmffHash::from_assertion(dh_assertion).unwrap();
+                bmff_hash
+                    .create_stream_segment_hash(&mut init_stream, None)
+                    .unwrap();
+                // bmff_hash
+                //     .verify_stream_segment(&mut init_stream, &mut segment_stream2, None)
+                //     .unwrap();
+
+                // bmff_hash
+                //     .verify_stream_segment(&mut init_stream, &mut segment_stream5, None)
+                //     .unwrap();
             }
         }
     }

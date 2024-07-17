@@ -31,6 +31,7 @@ use crate::{
         FragmentIO, HashObjectPositions, RemoteRefEmbed, RemoteRefEmbedType,
     },
     error::{Error, Result},
+    store::Store,
     utils::{
         hash_utils::{vec_compare, HashRange},
         xmp_inmemory_utils::{add_provenance, MIN_XMP},
@@ -1924,8 +1925,14 @@ impl FragmentIO for SegmentBmffIO {
 
         // let ftyp_token: &Vec<Token> = bmff_map.get(boxtype).ok_or(Error::UnsupportedType)?; // todo check ftyps to make sure we support any special format requirements
         let ftyp_info = &bmff_tree[ftyp_token[0]].data;
-        let ftyp_offset = ftyp_info.offset;
-        let ftyp_size = ftyp_info.size;
+        let mut ftyp_offset = ftyp_info.offset;
+        let mut ftyp_size = ftyp_info.size;
+
+        if let Some(sidx_token) = bmff_map.get("/sidx") {
+            let sidx_info = &bmff_tree[sidx_token[0]].data;
+            ftyp_offset = sidx_info.offset;
+            ftyp_size = sidx_info.size;
+        };
 
         // get position to insert c2pa
         let (c2pa_start, c2pa_length) =
@@ -2029,13 +2036,23 @@ impl FragmentIO for SegmentBmffIO {
     ) -> Result<()> {
         println!("Start save_cai_store_fragment");
 
-        self.fragment_write_cai(
+        let _ = self.fragment_write_cai(
             input_stream,
             output_stream,
             store_bytes,
             // is_manifest,
             merkle_data,
-        )
+        );
+        let bmff_hashes =
+            Store::generate_bmff_data_hashes_for_stream_merkle(output_stream, "sha256", true)?;
+
+        println!(
+            "{}:{}, output file bmff_hashes():{:?}",
+            file!(),
+            line!(),
+            bmff_hashes
+        );
+        Ok(())
 
         // copy temp file to asset
         // rename_or_move(output_stream, input_stream)

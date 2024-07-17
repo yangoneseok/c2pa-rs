@@ -223,6 +223,20 @@ impl AsRef<Builder> for Builder {
 }
 
 impl Builder {
+    pub fn _set_init_segments_merkle(&mut self, segments: usize) -> Result<()> {
+        let init_buf = ByteBuf::from([0u8; 32]);
+        let hashes = vec![init_buf.clone(); segments];
+
+        self.segments_bmff_mm = Some(C2PAMerkleTree::from_leaves(hashes, "sha256", false));
+        println!(
+            "{}:{}, Merkle Tree {:?}\n",
+            file!(),
+            line!(),
+            self.segments_bmff_mm
+        );
+        Ok(())
+    }
+
     pub fn set_segments<R>(&mut self, segments: &mut Vec<R>) -> Result<()>
     where
         R: Read + Seek + Send + Sized,
@@ -231,25 +245,30 @@ impl Builder {
             .iter_mut()
             .map(|x| -> ByteBuf {
                 let bmff_hash =
-                    Store::generate_bmff_data_hashes_for_stream_merkle(x, "sha256", true).unwrap();
+                    Store::generate_bmff_data_hashes_for_stream(x, "sha256", true).unwrap();
                 ByteBuf::from(bmff_hash[0].hash().unwrap().to_owned())
             })
             .collect::<Vec<ByteBuf>>();
 
         self.segments_bmff_mm = Some(C2PAMerkleTree::from_leaves(hashes, "sha256", false));
-        println!("{:?}\n", self.segments_bmff_mm);
+        println!(
+            "{}:{}, Merkle Tree {:?}\n",
+            file!(),
+            line!(),
+            self.segments_bmff_mm
+        );
         Ok(())
     }
 
-    pub fn set_init_merklemap<R>(&mut self, _segment: &mut R, count: u32) -> Result<()>
+    pub fn _set_init_merklemap<R>(&mut self, _segment: &mut R, count: u32) -> Result<()>
     where
         R: Read + Seek + Send + Sized,
     {
-        // let bmff_hash =
-        //     match Store::generate_bmff_data_hashes_for_stream_merkle(segment, "sha256", true) {
-        //         Ok(mut m) => m.pop(),
-        //         Err(_) => return Err(Error::HashMismatch("MerkleMap count incorrect".to_string())),
-        //     };
+        let bmff_hash = match Store::generate_bmff_data_hashes_for_stream(_segment, "sha256", true)
+        {
+            Ok(mut m) => m.pop(),
+            Err(_) => return Err(Error::HashMismatch("MerkleMap count incorrect".to_string())),
+        };
 
         let root = self
             .segments_bmff_mm
@@ -262,11 +281,11 @@ impl Builder {
             unique_id: 1,
             count,
             alg: None,
-            // init_hash: Some(ByteBuf::from(bmff_hash.unwrap().hash().unwrap().clone())),
-            init_hash: Some(ByteBuf::from([
-                175, 23, 119, 157, 3, 169, 191, 138, 166, 200, 37, 97, 59, 254, 247, 181, 84, 189,
-                192, 185, 15, 139, 154, 100, 231, 14, 21, 85, 123, 145, 182, 156,
-            ])),
+            init_hash: Some(ByteBuf::from(bmff_hash.unwrap().hash().unwrap().clone())),
+            // init_hash: Some(ByteBuf::from([
+            //     175, 23, 119, 157, 3, 169, 191, 138, 166, 200, 37, 97, 59, 254, 247, 181, 84, 189,
+            //     192, 185, 15, 139, 154, 100, 231, 14, 21, 85, 123, 145, 182, 156,
+            // ])),
             hashes: crate::assertions::VecByteBuf(vec![root]),
         };
 
@@ -876,7 +895,7 @@ impl Builder {
         );
         // let mut init_dest = dest_list.remove(0);
         let _ = self.set_segments(segments);
-        let _ = self.set_init_merklemap(init_segment, segments.len() as u32);
+        // let _ = self.set_init_merklemap(init_segment, segments.len() as u32);
         // convert the manifest to a store
         let mut store = self.to_store()?;
         // store.commit_claim(claim)?;
@@ -1406,6 +1425,7 @@ mod tests {
         // const PRIVATE_KEY: &[u8] = include_bytes!("../tests/fixtures/certs/ed25519.pem");
         let mut init_sources = Cursor::new(
             include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boatinit.mp4").to_vec(),
+            // include_bytes!("../tests/fixtures/fragmented/boatinit.mp4").to_vec(),
         );
         let mut sources = vec![
             Cursor::new(
@@ -1537,7 +1557,8 @@ mod tests {
         // const CERTS: &[u8] = include_bytes!("../tests/fixtures/certs/ed25519.pub");
         // const PRIVATE_KEY: &[u8] = include_bytes!("../tests/fixtures/certs/ed25519.pem");
         let mut init_sources = Cursor::new(
-            include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boatinit.mp4").to_vec(),
+            // include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boatinit.mp4").to_vec(),
+            include_bytes!("../tests/fixtures/fragmented/boatinit.mp4").to_vec(),
         );
         // let dest_list = vec![
         //     Cursor::new("fragmented/fragmented_no_c2pa/boat1_test.m4s"),

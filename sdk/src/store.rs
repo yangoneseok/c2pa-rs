@@ -13,13 +13,14 @@
 
 use std::{
     collections::HashMap,
-    io::{Cursor, Read, Seek, SeekFrom},
+    io::{Cursor, Read, Seek, SeekFrom, Write},
 };
 #[cfg(feature = "file_io")]
 use std::{fs, path::Path};
 
 use async_generic::async_generic;
 use log::error;
+use serde_bytes::ByteBuf;
 
 #[cfg(feature = "file_io")]
 use crate::jumbf_io::{
@@ -293,10 +294,8 @@ impl Store {
 
         Ok(claim_label)
     }
-    pub fn commit_merkle_tree(&mut self, claim: C2PAMerkleTree) -> Result<String> {
+    pub fn commit_merkle_tree(&mut self, claim: C2PAMerkleTree) {
         self.merklemap = Some(claim);
-
-        Ok("dd".to_string())
     }
 
     /// Add a new update manifest to this Store. The manifest label
@@ -2222,37 +2221,157 @@ impl Store {
         }
     }
 
-    pub fn save_to_merkle_stream(
+    #[async_generic(async_signature(
         &mut self,
         format: &str,
         input_stream: &mut dyn CAIRead,
         output_stream: &mut dyn CAIReadWrite,
-        leaf_index: usize,
+        signer: &dyn AsyncSigner,
+    ))]
+    pub fn save_to_init_stream(
+        &mut self,
+        format: &str,
+        input_stream: &mut dyn CAIRead,
+        output_stream: &mut dyn CAIReadWrite,
+        signer: &dyn Signer,
     ) -> Result<Vec<u8>> {
-        // std::fs::copy(input_stream, &output_stream).unwrap();
-        let bmff_io = SegmentBmffIO::new(format);
-        let mm = &BmffMerkleMap {
-            unique_id: 1,
-            local_id: 1,
-            location: leaf_index as u32,
-            hashes: Some(VecByteBuf(
-                self.merklemap
-                    .as_ref()
-                    .unwrap()
-                    .get_proof_by_index(leaf_index)
-                    .unwrap(),
-            )),
-        };
+        let intermediate_output: Vec<u8> = Vec::new();
+        let mut intermediate_stream = Cursor::new(intermediate_output);
 
-        let binding = mm.to_assertion().expect("should serialize");
+        let jumbf_bytes = self.start_save_init_stream(
+            format,
+            input_stream,
+            &mut intermediate_stream,
+            signer.reserve_size(),
+        )?;
+        let pc = self.provenance_claim().ok_or(Error::ClaimEncoding)?;
+        println!("{}:{}, store.get_claim {:?}", file!(), line!(), pc);
+        let sig = if _sync {
+            self.sign_claim(pc, signer, signer.reserve_size())
+        } else {
+            self.sign_claim_async(pc, signer, signer.reserve_size())
+                .await
+        }?;
+        // let mm = self.get_claim(labels::BMFF_HASH).unwrap();
+        // println!("store.get_claim {:?}", mm);
+        let sig_placeholder = Store::sign_claim_placeholder(pc, signer.reserve_size());
 
-        // let merkle_bytes = merkle_json.as_bytes();
-        match bmff_io.save_cai_store_fragment(input_stream, output_stream, &[0; 0], &binding.data())
-        {
-            Ok(_) => Ok(Vec::new()),
+        intermediate_stream.rewind()?;
+        match self.finish_save_stream(
+            jumbf_bytes,
+            format,
+            &mut intermediate_stream,
+            output_stream,
+            sig,
+            &sig_placeholder,
+        ) {
+            Ok((s, m)) => {
+                // save sig so store is up to date
+                let pc_mut = self.provenance_claim_mut().ok_or(Error::ClaimEncoding)?;
+                pc_mut.set_signature_val(s);
+
+                Ok(m)
+            }
             Err(e) => Err(e),
         }
     }
+
+    pub fn save_to_segment_stream<R, W>(
+        &mut self,
+        format: &str,
+        input_stream: &mut Vec<R>,
+        output_stream: &mut Vec<W>,
+        // leaf_node: usize,
+    ) -> Result<C2PAMerkleTree>
+    where
+        R: Read + Seek + Send,
+        W: Write + Read + Seek + Send,
+    {
+        println!(
+            "{}:{}, fragment_write_cai merkle_data: {:?}",
+            file!(),
+            line!(),
+            self.merklemap
+        );
+        // std::fs::copy(input_stream, &output_stream).unwrap();
+        let mut intermediate_list: Vec<Cursor<Vec<u8>>> = Vec::new();
+        for leaf_node in 0..output_stream.len() {
+            let intermediate_output: Vec<u8> = Vec::new();
+            let mut intermediate_stream = Cursor::new(intermediate_output);
+
+            let bmff_io = SegmentBmffIO::new(format);
+            let mm = &BmffMerkleMap {
+                unique_id: 1,
+                local_id: 1,
+                location: leaf_node as u32,
+                hashes: Some(VecByteBuf(
+                    self.merklemap
+                        .as_ref()
+                        .unwrap()
+                        .get_proof_by_index(leaf_node)
+                        .unwrap(),
+                )),
+            };
+
+            let binding = mm.to_assertion().expect("should serialize");
+
+            // let merkle_bytes = merkle_json.as_bytes();
+            bmff_io.save_cai_store_fragment(
+                &mut input_stream[leaf_node],
+                // &mut intermediate_stream,
+                &mut intermediate_stream,
+                &[0; 0],
+                &binding.data(),
+            )?;
+            intermediate_list.push(intermediate_stream);
+            // std::io::copy(&mut intermediate_stream, &mut output_stream[leaf_node])?;
+        }
+        let hashes = intermediate_list
+            .iter_mut()
+            .map(|x| -> ByteBuf {
+                let bmff_hash =
+                    Store::generate_bmff_data_hashes_for_stream(x, "sha256", true).unwrap();
+                ByteBuf::from(bmff_hash[0].hash().unwrap().to_owned())
+            })
+            .collect::<Vec<ByteBuf>>();
+        println!("{}:{}, hashes hashes: {:?}", file!(), line!(), hashes);
+        let segments_bmff_mm = Some(C2PAMerkleTree::from_leaves(hashes, "sha256", false));
+        println!(
+            "{}:{}, fragment_write_cai merkle_data: {:?}",
+            file!(),
+            line!(),
+            segments_bmff_mm
+        );
+        for leaf_node in 0..output_stream.len() {
+            let bmff_io = SegmentBmffIO::new(format);
+            let mm = &BmffMerkleMap {
+                unique_id: 1,
+                local_id: 1,
+                location: leaf_node as u32,
+                hashes: Some(VecByteBuf(
+                    segments_bmff_mm
+                        .as_ref()
+                        .unwrap()
+                        .get_proof_by_index(leaf_node)
+                        .unwrap(),
+                )),
+            };
+
+            let binding = mm.to_assertion().expect("should serialize");
+
+            // let merkle_bytes = merkle_json.as_bytes();
+            bmff_io.save_cai_store_fragment(
+                &mut input_stream[leaf_node],
+                // &mut intermediate_stream,
+                &mut output_stream[leaf_node],
+                &[0; 0],
+                &binding.data(),
+            )?;
+            // std::io::copy(&mut intermediate_stream, &mut output_stream[leaf_node])?;
+        }
+        Ok(segments_bmff_mm.unwrap())
+    }
+
     /// This function is used to pre-generate a manifest as if it were added to input_stream. All values
     /// are complete including the hash bindings, except for the signature.  The signature is completed during
     /// the actual embedding using `embed_placed_manifest `.   The Signature box reserve_size is based on the size required by
@@ -2753,16 +2872,16 @@ impl Store {
             if !pc.update_manifest() {
                 println!("\n\nTEST\n\n");
                 intermediate_stream.rewind()?;
-                // let bmff_hashes = Store::generate_bmff_data_hashes_for_stream(
-                //     &mut intermediate_stream,
-                //     pc.alg(),
-                //     false,
-                // )?;
-                let bmff_hashes = Store::generate_bmff_data_hashes_for_stream_merkle(
+                let bmff_hashes = Store::generate_bmff_data_hashes_for_stream(
                     &mut intermediate_stream,
                     pc.alg(),
                     false,
                 )?;
+                // let bmff_hashes = Store::generate_bmff_data_hashes_for_stream_merkle(
+                //     &mut intermediate_stream,
+                //     pc.alg(),
+                //     false,
+                // )?;
                 for hash in bmff_hashes {
                     pc.add_assertion(&hash)?;
                 }
@@ -2772,7 +2891,7 @@ impl Store {
             // and write preliminary jumbf store to file
             // source and dest the same so save_jumbf_to_file will use the same file since we have already cloned
             data = self.to_jumbf_internal(reserve_size)?;
-            // jumbf_size = data.len();
+            jumbf_size = data.len();
             // write the jumbf to the output stream if we are embedding the manifest
             if !remove_manifests {
                 intermediate_stream.rewind()?;
@@ -2784,14 +2903,7 @@ impl Store {
             }
             let merkle = self.merkle().clone();
             // generate actual hash values
-            println!("\n여긴어디: {}:{}, merkle\n", file!(), line!());
             let pc = self.provenance_claim_mut().ok_or(Error::ClaimEncoding)?; // reborrow to change mutability
-            println!(
-                "\n여긴어디: {}:{}, provenance_claim_mut {:?}\n",
-                file!(),
-                line!(),
-                pc
-            );
             if !pc.update_manifest() {
                 let bmff_hashes = pc.bmff_hash_assertions();
 
@@ -2806,12 +2918,6 @@ impl Store {
                         merkle.leaves.len() as u32,
                         merkle.get_root().unwrap().clone(),
                     )?;
-                    println!(
-                        "여긴어디: {}:{}, gen_hash_from_stream_merkle {:?}",
-                        file!(),
-                        line!(),
-                        bmff_hash,
-                    );
                     pc.update_bmff_hash(bmff_hash)?;
                 }
             }
@@ -2846,7 +2952,7 @@ impl Store {
 
             // 3) Generate in memory CAI jumbf block
             data = self.to_jumbf_internal(reserve_size)?;
-            // jumbf_size = data.len();
+            jumbf_size = data.len();
 
             // write the jumbf to the output stream if we are embedding the manifest
             if !remove_manifests {
@@ -2886,11 +2992,219 @@ impl Store {
                 }
             }
         }
-        println!("여긴어디: {}:{}, data {:?} ", file!(), line!(), data.len());
         // regenerate the jumbf because the cbor changed
         data = self.to_jumbf_internal(reserve_size)?;
-        println!("여긴어디: {}:{}, data {:?}", file!(), line!(), data.len());
-        jumbf_size = data.len();
+        // jumbf_size = data.len();
+        if jumbf_size != data.len() {
+            return Err(Error::JumbfCreationError);
+        }
+
+        Ok(data) // return JUMBF data
+    }
+
+    fn start_save_init_stream(
+        &mut self,
+        format: &str,
+        input_stream: &mut dyn CAIRead,
+        output_stream: &mut dyn CAIReadWrite,
+        reserve_size: usize,
+    ) -> Result<Vec<u8>> {
+        let intermediate_output: Vec<u8> = Vec::new();
+        let mut intermediate_stream = Cursor::new(intermediate_output);
+
+        let pc = self.provenance_claim_mut().ok_or(Error::ClaimEncoding)?;
+        println!(
+            "\n여긴어디: {}:{}, provenance_claim_mut {:?}\n",
+            file!(),
+            line!(),
+            pc
+        );
+        // Add remote reference XMP if needed and strip out existing manifest
+        // We don't need to strip manifests if we are replacing an exsiting one
+        let (url, remove_manifests) = match pc.remote_manifest() {
+            RemoteManifest::NoRemote => (None, false),
+            RemoteManifest::SideCar => (None, true),
+            RemoteManifest::Remote(url) => (Some(url), true),
+            RemoteManifest::EmbedWithRemote(url) => (Some(url), false),
+        };
+
+        let io_handler = get_assetio_handler(format).ok_or(Error::UnsupportedType)?;
+
+        // Do not assume the handler supports XMP or removing manifests unless we need it to
+        if let Some(url) = url {
+            let external_ref_writer = io_handler
+                .remote_ref_writer_ref()
+                .ok_or(Error::XmpNotSupported)?;
+
+            if remove_manifests {
+                let manifest_writer = io_handler
+                    .get_writer(format)
+                    .ok_or(Error::UnsupportedType)?;
+
+                let tmp_output: Vec<u8> = Vec::new();
+                let mut tmp_stream = Cursor::new(tmp_output);
+                manifest_writer.remove_cai_store_from_stream(input_stream, &mut tmp_stream)?;
+
+                // add external ref if possible
+                tmp_stream.rewind()?;
+                external_ref_writer.embed_reference_to_stream(
+                    &mut tmp_stream,
+                    &mut intermediate_stream,
+                    RemoteRefEmbedType::Xmp(url),
+                )?;
+            } else {
+                // add external ref if possible
+                external_ref_writer.embed_reference_to_stream(
+                    input_stream,
+                    &mut intermediate_stream,
+                    RemoteRefEmbedType::Xmp(url),
+                )?;
+            }
+        } else if remove_manifests {
+            let manifest_writer = io_handler
+                .get_writer(format)
+                .ok_or(Error::UnsupportedType)?;
+
+            manifest_writer.remove_cai_store_from_stream(input_stream, &mut intermediate_stream)?;
+        } else {
+            // just clone stream
+            input_stream.rewind()?;
+            std::io::copy(input_stream, &mut intermediate_stream)?;
+        }
+
+        let is_bmff = is_bmff_format(format);
+
+        let mut data;
+        let jumbf_size;
+
+        if is_bmff {
+            // 2) Get hash ranges if needed, do not generate for update manifests
+            if !pc.update_manifest() {
+                println!("\n\nTEST\n\n");
+                intermediate_stream.rewind()?;
+                // let bmff_hashes = Store::generate_bmff_data_hashes_for_stream(
+                //     &mut intermediate_stream,
+                //     pc.alg(),
+                //     false,
+                // )?;
+                let bmff_hashes = Store::generate_bmff_data_hashes_for_stream_merkle(
+                    &mut intermediate_stream,
+                    pc.alg(),
+                    false,
+                )?;
+                for hash in bmff_hashes {
+                    pc.add_assertion(&hash)?;
+                }
+            }
+
+            // 3) Generate in memory CAI jumbf block
+            // and write preliminary jumbf store to file
+            // source and dest the same so save_jumbf_to_file will use the same file since we have already cloned
+            data = self.to_jumbf_internal(reserve_size)?;
+            jumbf_size = data.len();
+            // write the jumbf to the output stream if we are embedding the manifest
+            if !remove_manifests {
+                intermediate_stream.rewind()?;
+                save_jumbf_to_stream(format, &mut intermediate_stream, output_stream, &data)?;
+            } else {
+                // just copy the asset to the output stream without an embedded manifest (may be stripping one out here)
+                intermediate_stream.rewind()?;
+                std::io::copy(&mut intermediate_stream, output_stream)?;
+            }
+            let merkle = self.merkle().clone();
+            // generate actual hash values
+            let pc = self.provenance_claim_mut().ok_or(Error::ClaimEncoding)?; // reborrow to change mutability
+            if !pc.update_manifest() {
+                let bmff_hashes = pc.bmff_hash_assertions();
+
+                if !bmff_hashes.is_empty() {
+                    let mut bmff_hash = BmffHash::from_assertion(bmff_hashes[0])?;
+                    output_stream.rewind()?;
+                    // bmff_hash.gen_hash_from_stream(output_stream)?;
+                    bmff_hash
+                        .create_stream_segment_hash(output_stream, None)
+                        .unwrap();
+                    bmff_hash.gen_hash_from_stream_merkle(
+                        merkle.leaves.len() as u32,
+                        merkle.get_root().unwrap().clone(),
+                    )?;
+                    pc.update_bmff_hash(bmff_hash)?;
+                }
+            }
+        } else {
+            // we will not do automatic hashing if we detect a box hash present
+            let mut needs_hashing = false;
+            if pc.hash_assertions().is_empty() {
+                // 2) Get hash ranges if needed, do not generate for update manifests
+                let mut hash_ranges =
+                    object_locations_from_stream(format, &mut intermediate_stream)?;
+                let hashes: Vec<DataHash> = if pc.update_manifest() {
+                    Vec::new()
+                } else {
+                    Store::generate_data_hashes_for_stream(
+                        &mut intermediate_stream,
+                        pc.alg(),
+                        &mut hash_ranges,
+                        false,
+                    )?
+                };
+
+                // add the placeholder data hashes to provenance claim so that the required space is reserved
+                for mut hash in hashes {
+                    // add padding to account for possible cbor expansion of final DataHash
+                    let padding: Vec<u8> = vec![0x0; 10];
+                    hash.add_padding(padding);
+
+                    pc.add_assertion(&hash)?;
+                }
+                needs_hashing = true;
+            }
+
+            // 3) Generate in memory CAI jumbf block
+            data = self.to_jumbf_internal(reserve_size)?;
+            jumbf_size = data.len();
+
+            // write the jumbf to the output stream if we are embedding the manifest
+            if !remove_manifests {
+                intermediate_stream.rewind()?;
+                save_jumbf_to_stream(format, &mut intermediate_stream, output_stream, &data)?;
+            } else {
+                // just copy the asset to the output stream without an embedded manifest (may be stripping one out here)
+                intermediate_stream.rewind()?;
+                std::io::copy(&mut intermediate_stream, output_stream)?;
+            }
+
+            // 4)  determine final object locations and patch the asset hashes with correct offset
+            // replace the source with correct asset hashes so that the claim hash will be correct
+            if needs_hashing {
+                let pc = self.provenance_claim_mut().ok_or(Error::ClaimEncoding)?;
+
+                // get the final hash ranges, but not for update manifests
+                output_stream.rewind()?;
+                let mut new_hash_ranges = object_locations_from_stream(format, output_stream)?;
+                if !pc.update_manifest() {
+                    let updated_hashes = Store::generate_data_hashes_for_stream(
+                        output_stream,
+                        pc.alg(),
+                        &mut new_hash_ranges,
+                        true,
+                    )?;
+                    println!(
+                        "여긴어디: {}:{} updated_hashes {:?}",
+                        file!(),
+                        line!(),
+                        updated_hashes
+                    );
+                    // patch existing claim hash with updated data
+                    for hash in updated_hashes {
+                        pc.update_data_hash(hash)?;
+                    }
+                }
+            }
+        }
+        // regenerate the jumbf because the cbor changed
+        data = self.to_jumbf_internal(reserve_size)?;
+        // jumbf_size = data.len();
         if jumbf_size != data.len() {
             return Err(Error::JumbfCreationError);
         }

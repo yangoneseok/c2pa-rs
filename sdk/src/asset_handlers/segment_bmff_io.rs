@@ -31,7 +31,6 @@ use crate::{
         FragmentIO, HashObjectPositions, RemoteRefEmbed, RemoteRefEmbedType,
     },
     error::{Error, Result},
-    store::Store,
     utils::{
         hash_utils::{vec_compare, HashRange},
         xmp_inmemory_utils::{add_provenance, MIN_XMP},
@@ -257,13 +256,6 @@ pub(crate) struct BoxInfo {
     version: Option<u8>,
     flags: Option<u32>,
 }
-
-// #[derive(Clone, Debug, PartialEq)]
-// pub(crate) struct BoxInfoLite {
-//     pub path: String,
-//     pub offset: u64,
-//     pub size: u64,
-// }
 
 fn read_box_header_ext<R: Read + Seek + ?Sized>(reader: &mut R) -> Result<(u8, u32)> {
     let version = reader.read_u8()?;
@@ -1118,12 +1110,10 @@ fn get_uuid_token(
     }
     None
 }
-#[deny(warnings)]
+
 // pub(crate) struct C2PABmffBoxes {
 //     pub manifest_bytes: Option<Vec<u8>>,
-//     #[deny(dead_code)]
 //     pub bmff_merkle: Vec<BmffMerkleMap>,
-//     #[deny(dead_code)]
 //     pub box_infos: Vec<BoxInfoLite>,
 //     pub xmp: Option<String>,
 // }
@@ -1217,6 +1207,7 @@ pub(crate) fn read_bmff_c2pa_boxes(reader: &mut dyn CAIRead) -> Result<C2PABmffB
                         } else if vec_compare(&purpose, MERKLE.as_bytes()) {
                             let mut merkle = vec![0u8; data_len as usize];
                             reader.read_exact(&mut merkle)?;
+
                             // strip trailing zeros
                             loop {
                                 if !merkle.is_empty() && merkle[merkle.len() - 1] == 0 {
@@ -1229,10 +1220,7 @@ pub(crate) fn read_bmff_c2pa_boxes(reader: &mut dyn CAIRead) -> Result<C2PABmffB
                             }
 
                             // find uuid from uuid list
-                            // let a: Claim = serde_cbor::from_slice(&merkle)?;
-                            // println!("여긴어디: {:?}", a);
                             let mm: BmffMerkleMap = serde_cbor::from_slice(&merkle)?;
-                            println!("여긴어디: {}:{}", file!(), line!());
                             merkle_boxes.push(mm);
                         }
                     } else if vec_compare(&XMP_UUID, uuid) {
@@ -1268,7 +1256,7 @@ pub(crate) fn read_bmff_c2pa_boxes(reader: &mut dyn CAIRead) -> Result<C2PABmffB
 impl CAIReader for SegmentBmffIO {
     fn read_cai(&self, reader: &mut dyn CAIRead) -> Result<Vec<u8>> {
         let c2pa_boxes = read_bmff_c2pa_boxes(reader)?;
-        println!("여긴어디: {}:{}", file!(), line!());
+
         c2pa_boxes.manifest_bytes.ok_or(Error::JumbfNotFound)
     }
 
@@ -1383,6 +1371,7 @@ impl CAIWriter for SegmentBmffIO {
 
         let (mut bmff_tree, root_token) = Arena::with_data(root_box);
         let mut bmff_map: HashMap<String, Vec<Token>> = HashMap::new();
+
         // build layout of the BMFF structure
         build_bmff_tree(
             input_stream,
@@ -1391,7 +1380,7 @@ impl CAIWriter for SegmentBmffIO {
             &root_token,
             &mut bmff_map,
         )?;
-        let _is_segment = bmff_map.contains_key("/mdat");
+
         let is_manifest = bmff_map.contains_key("/ftyp");
         // let ftyp_token: &Vec<Token> = bmff_map.get(boxtype).ok_or(Error::UnsupportedType)?;
         let ftyp_token: &Vec<Token> = match bmff_map.get("/ftyp") {
@@ -2034,23 +2023,13 @@ impl FragmentIO for SegmentBmffIO {
         // is_manifest: bool,
         merkle_data: &[u8],
     ) -> Result<()> {
-        println!("Start save_cai_store_fragment");
-
+        println!("\nStart save_cai_store_fragment\n");
         let _ = self.fragment_write_cai(
             input_stream,
             output_stream,
             store_bytes,
             // is_manifest,
             merkle_data,
-        );
-        let bmff_hashes =
-            Store::generate_bmff_data_hashes_for_stream_merkle(output_stream, "sha256", true)?;
-
-        println!(
-            "{}:{}, output file bmff_hashes():{:?}",
-            file!(),
-            line!(),
-            bmff_hashes
         );
         Ok(())
 

@@ -14,7 +14,7 @@
 /// Converts a file extension to a MIME type
 pub fn extension_to_mime(extension: &str) -> Option<&'static str> {
     Some(match extension {
-        "fmp4" => "fmp4",
+        "fmp4" => "video/mp4",
         "jpg" | "jpeg" => "image/jpeg",
         "png" => "image/png",
         "gif" => "image/gif",
@@ -62,7 +62,7 @@ pub fn format_to_mime(format: &str) -> String {
 #[cfg(feature = "file_io")]
 pub fn format_to_extension(format: &str) -> Option<&'static str> {
     Some(match format {
-        "fmp4" => "fmp4",
+        "fmp4" => "video/mp4",
         "jpg" | "jpeg" | "image/jpeg" => "jpg",
         "png" | "image/png" => "png",
         "gif" | "image/gif" => "gif",

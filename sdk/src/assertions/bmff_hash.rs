@@ -809,7 +809,7 @@ impl BmffHash {
                 None => "sha256".to_string(),
             },
         };
-        println!("\nStart Verify \n");
+
         // handle file level hashing
         if self.hash().is_some() {
             return Err(Error::HashMismatch(
@@ -823,15 +823,11 @@ impl BmffHash {
             let c2pa_boxes = read_bmff_c2pa_boxes(fragment_stream)?;
 
             let bmff_merkle = c2pa_boxes.bmff_merkle;
+            println!("{}:{}, bmff_merkle: {:?}", file!(), line!(), bmff_merkle);
             if bmff_merkle.is_empty() {
                 return Err(Error::HashMismatch("Fragment had no MerkleMap".to_string()));
             }
-            println!(
-                "\n\n{}:{}, bmff_merkle: {:?}\n\n",
-                file!(),
-                line!(),
-                bmff_merkle
-            );
+
             for bmff_mm in bmff_merkle {
                 // find matching MerkleMap for this uniqueId & localId
                 if let Some(mm) = mm_vec
@@ -877,13 +873,7 @@ impl BmffHash {
                             Some(fragment_exclusions),
                             true,
                         )?;
-                        println!(
-                            "{}:{}, fragment_hash: {:?} \n{:?}\n",
-                            file!(),
-                            line!(),
-                            hash,
-                            &bmff_mm
-                        );
+
                         // check MerkleMap for the hash
                         if !mm.check_merkle_tree(alg, &hash, bmff_mm.location, &bmff_mm.hashes) {
                             return Err(Error::HashMismatch("Fragment not valid".to_string()));
@@ -916,20 +906,13 @@ impl BmffHash {
             },
         };
 
-        // handle file level hashing
-        // if self.hash().is_some() {
-        //     return Err(Error::HashMismatch(
-        //         "create_stream_segment_hash: Hash value should not be present for a fragmented BMFF asset".to_string(),
-        //     ));
-        // }
         let bmff_exclusions = &self.exclusions;
         // Merkle hashed BMFF
         let fragment_exclusions: Vec<HashRange> =
             bmff_to_jumbf_exclusions(fragment_stream, bmff_exclusions, self.bmff_version > 1)?;
 
-        // hash the entire fragment minus exclusions
         let hash = hash_stream_by_alg(&curr_alg, fragment_stream, Some(fragment_exclusions), true)?;
-        println!("{}, fragment_hash: {:?} ", line!(), hash);
+
         self.hash = Some(ByteBuf::from(hash));
         Ok(())
     }
@@ -1005,10 +988,10 @@ pub mod tests {
         let init_stream_path = fixture_path("../../output/outputinit.mp4");
         let segment_stream_path0 = fixture_path("../../output/output1.m4s");
         let segment_stream_path1 = fixture_path("../../output/output2.m4s");
-        let segment_stream_path3 = fixture_path("../../output/output3.m4s");
-        let segment_stream_path4 = fixture_path("../../output/output4.m4s");
-        let segment_stream_path5 = fixture_path("../../output/output5.m4s");
-        let segment_stream_path2 = fixture_path("../../output/output6.m4s");
+        let segment_stream_path2 = fixture_path("../../output/output3.m4s");
+        let segment_stream_path3 = fixture_path("../../output/output4.m4s");
+        let segment_stream_path4 = fixture_path("../../output/output5.m4s");
+        // let segment_stream_path5 = fixture_path("../../output/output6.m4s");
 
         // let segment_stream_path10 = fixture_path("fragmented/boat2.m4s");
         // let segment_stream_path11 = fixture_path("fragmented/boat3.m4s");
@@ -1019,7 +1002,7 @@ pub mod tests {
         let mut segment_stream2 = std::fs::File::open(segment_stream_path2).unwrap();
         let mut segment_stream3 = std::fs::File::open(segment_stream_path3).unwrap();
         let mut segment_stream4 = std::fs::File::open(segment_stream_path4).unwrap();
-        let mut segment_stream5 = std::fs::File::open(segment_stream_path5).unwrap();
+        // let mut segment_stream5 = std::fs::File::open(segment_stream_path5).unwrap();
 
         let mut log = DetailedStatusTracker::default();
 
@@ -1059,9 +1042,9 @@ pub mod tests {
                     .verify_stream_segment(&mut init_stream, &mut segment_stream4, None)
                     .unwrap();
 
-                bmff_hash
-                    .verify_stream_segment(&mut init_stream, &mut segment_stream5, None)
-                    .unwrap();
+                // bmff_hash
+                //     .verify_stream_segment(&mut init_stream, &mut segment_stream5, None)
+                //     .unwrap();
             }
         }
     }

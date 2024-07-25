@@ -48,6 +48,7 @@ lazy_static! {
             Box::new(SvgIO::new("")),
             Box::new(TiffIO::new("")),
             Box::new(Mp3IO::new("")),
+            // Box::new(SegmentBmffIO::new("")),
         ];
 
         let mut handler_map = HashMap::new();
@@ -76,6 +77,7 @@ lazy_static! {
             Box::new(SvgIO::new("")),
             Box::new(TiffIO::new("")),
             Box::new(Mp3IO::new("")),
+            // Box::new(SegmentBmffIO::new("")),
         ];
         let mut handler_map = HashMap::new();
 

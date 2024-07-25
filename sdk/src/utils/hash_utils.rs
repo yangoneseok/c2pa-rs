@@ -290,7 +290,7 @@ where
                         let b_start = b.start();
                         a_start.cmp(b_start)
                     });
-                    println!("{}:{}, ranges_vec: {:?}", file!(), line!(), ranges_vec);
+
                     ranges_vec
                 } else {
                     for r in ranges.into_smallvec() {
@@ -364,25 +364,10 @@ where
 
             // move to start of range
             data.seek(SeekFrom::Start(*start))?;
-            println!(
-                "\n{}:{}, &start: {:?} &end: {:?}\n",
-                file!(),
-                line!(),
-                &start,
-                &end
-            );
-            // let a = bmff_v2_starts.contains(start);
-            // let b = end - start;
 
             // check to see if this range is an BMFF V2 offset to include in the hash
             if bmff_v2_starts.contains(start) && (end - start) == 0 {
-                println!(
-                    "\n{}:{}, &start.to_be_bytes: {:?} \n",
-                    file!(),
-                    line!(),
-                    &start.to_be_bytes(),
-                );
-                // hasher_enum.update(&start.to_be_bytes());
+                hasher_enum.update(&start.to_be_bytes());
             }
             // let mut test_arr: Vec<u8> = Vec::new();
             let mut chunk = vec![0u8; std::cmp::min(chunk_left as usize, MAX_HASH_BUF)];

@@ -479,7 +479,6 @@ where
             for box_token in box_token_list {
                 let box_info = &bmff_tree[*box_token].data;
 
-                println!("{}:{}, box_info: {:?}", file!(), line!(), box_info);
                 let box_start = box_info.offset;
                 let box_length = box_info.size;
 
@@ -1205,7 +1204,7 @@ pub(crate) fn read_bmff_c2pa_boxes(reader: &mut dyn CAIRead) -> Result<C2PABmffB
                             } else {
                                 return Err(Error::TooManyManifestStores);
                             }
-                            // println!("여긴어디: {}:{}, buf: {:?}", file!(), line!(), buf);
+
                             // if contains offset this asset contains additional UUID boxes
                             if offset != 0 {
                                 _first_aux_uuid = offset;
@@ -1213,6 +1212,7 @@ pub(crate) fn read_bmff_c2pa_boxes(reader: &mut dyn CAIRead) -> Result<C2PABmffB
                         } else if vec_compare(&purpose, MERKLE.as_bytes()) {
                             let mut merkle = vec![0u8; data_len as usize];
                             reader.read_exact(&mut merkle)?;
+
                             // strip trailing zeros
                             loop {
                                 if !merkle.is_empty() && merkle[merkle.len() - 1] == 0 {
@@ -1225,8 +1225,6 @@ pub(crate) fn read_bmff_c2pa_boxes(reader: &mut dyn CAIRead) -> Result<C2PABmffB
                             }
 
                             // find uuid from uuid list
-                            // let a: Claim = serde_cbor::from_slice(&merkle)?;
-                            // println!("여긴어디: {:?}", a);
                             let mm: BmffMerkleMap = serde_cbor::from_slice(&merkle)?;
                             merkle_boxes.push(mm);
                         }
@@ -1263,7 +1261,7 @@ pub(crate) fn read_bmff_c2pa_boxes(reader: &mut dyn CAIRead) -> Result<C2PABmffB
 impl CAIReader for BmffIO {
     fn read_cai(&self, reader: &mut dyn CAIRead) -> Result<Vec<u8>> {
         let c2pa_boxes = read_bmff_c2pa_boxes(reader)?;
-        println!("여긴어디: {}:{}", file!(), line!());
+
         c2pa_boxes.manifest_bytes.ok_or(Error::JumbfNotFound)
     }
 
@@ -1363,6 +1361,7 @@ impl CAIWriter for BmffIO {
     ) -> Result<()> {
         let size = input_stream.seek(SeekFrom::End(0))?;
         input_stream.rewind()?;
+
         // create root node
         let root_box = BoxInfo {
             path: "".to_string(),
@@ -1377,6 +1376,7 @@ impl CAIWriter for BmffIO {
 
         let (mut bmff_tree, root_token) = Arena::with_data(root_box);
         let mut bmff_map: HashMap<String, Vec<Token>> = HashMap::new();
+
         // build layout of the BMFF structure
         build_bmff_tree(
             input_stream,
@@ -1385,22 +1385,10 @@ impl CAIWriter for BmffIO {
             &root_token,
             &mut bmff_map,
         )?;
-        // let _is_segment = bmff_map.contains_key("/mdat");
-        // let is_manifest = bmff_map.contains_key("/ftyp");
-        let ftyp_token: &Vec<Token> = bmff_map.get("/ftyp").ok_or(Error::UnsupportedType)?;
-        // let ftyp_token: &Vec<Token> = match bmff_map.get("/ftyp") {
-        //     Some(ftyp) => ftyp,
-        //     _ => match bmff_map.get("/styp") {
-        //         Some(styp) => styp,
-        //         None => {
-        //             return Err(Error::UnsupportedType);
-        //         }
-        //     },
-        // };
 
         // get ftyp location
         // start after ftyp
-        // let ftyp_token = bmff_map.get("/ftyp").ok_or(Error::UnsupportedType)?; // todo check ftyps to make sure we support any special format requirements
+        let ftyp_token = bmff_map.get("/ftyp").ok_or(Error::UnsupportedType)?; // todo check ftyps to make sure we support any special format requirements
         let ftyp_info = &bmff_tree[ftyp_token[0]].data;
         let ftyp_offset = ftyp_info.offset;
         let ftyp_size = ftyp_info.size;
@@ -1416,7 +1404,6 @@ impl CAIWriter for BmffIO {
             };
 
         let mut new_c2pa_box: Vec<u8> = Vec::with_capacity(store_bytes.len() * 2);
-        println!("\nWrite_cai\n");
         let merkle_data: &[u8] = &[]; // not yet supported
         write_c2pa_box(&mut new_c2pa_box, store_bytes, true, merkle_data)?;
         let new_c2pa_box_size = new_c2pa_box.len();

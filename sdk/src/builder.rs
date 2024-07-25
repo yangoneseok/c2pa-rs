@@ -223,7 +223,7 @@ impl AsRef<Builder> for Builder {
 }
 
 impl Builder {
-    pub fn _set_init_segments_merkle(&mut self, segments: usize) -> Result<()> {
+    pub fn set_init_segments_merkle(&mut self, segments: usize) -> Result<()> {
         let init_buf = ByteBuf::from([0u8; 32]);
         let hashes = vec![init_buf.clone(); segments];
 
@@ -237,28 +237,22 @@ impl Builder {
         Ok(())
     }
 
-    pub fn set_segments<R>(&mut self, segments: &mut Vec<R>) -> Result<()>
-    where
-        R: Read + Seek + Send + Sized,
-    {
-        let hashes = segments
-            .iter_mut()
-            .map(|x| -> ByteBuf {
-                let bmff_hash =
-                    Store::generate_bmff_data_hashes_for_stream(x, "sha256", true).unwrap();
-                ByteBuf::from(bmff_hash[0].hash().unwrap().to_owned())
-            })
-            .collect::<Vec<ByteBuf>>();
+    // pub fn set_segments<R>(&mut self, segments: &mut Vec<R>) -> Result<()>
+    // where
+    //     R: Read + Seek + Send + Sized,
+    // {
+    //     let hashes = segments
+    //         .iter_mut()
+    //         .map(|x| -> ByteBuf {
+    //             let bmff_hash =
+    //                 Store::generate_bmff_data_hashes_for_stream(x, "sha256", true).unwrap();
+    //             ByteBuf::from(bmff_hash[0].hash().unwrap().to_owned())
+    //         })
+    //         .collect::<Vec<ByteBuf>>();
 
-        self.segments_bmff_mm = Some(C2PAMerkleTree::from_leaves(hashes, "sha256", false));
-        println!(
-            "{}:{}, Merkle Tree {:?}\n",
-            file!(),
-            line!(),
-            self.segments_bmff_mm
-        );
-        Ok(())
-    }
+    //     self.segments_bmff_mm = Some(C2PAMerkleTree::from_leaves(hashes, "sha256", false));
+    //     Ok(())
+    // }
 
     pub fn _set_init_merklemap<R>(&mut self, _segment: &mut R, count: u32) -> Result<()>
     where
@@ -750,7 +744,7 @@ impl Builder {
         let mut store: Store = Store::new();
         let _provenance = store.commit_claim(claim)?;
         if let Some(segments_bmff_mm) = &self.segments_bmff_mm {
-            let _ = store.commit_merkle_tree(segments_bmff_mm.clone());
+            store.commit_merkle_tree(segments_bmff_mm.clone());
         }
         // store.commit_merkletree(merkletree)?;
         Ok(store)
@@ -759,7 +753,7 @@ impl Builder {
     fn to_merkle_store(&self) -> Result<Store> {
         let mut store: Store = Store::new();
         if let Some(segments_bmff_mm) = &self.segments_bmff_mm {
-            let _ = store.commit_merkle_tree(segments_bmff_mm.clone());
+            store.commit_merkle_tree(segments_bmff_mm.clone());
         }
         Ok(store)
     }
@@ -888,51 +882,30 @@ impl Builder {
 
         //// 2. Hash 계산
         //// 3.Merkle Tree 생성
-        println!(
-            "Segment Count {}, Dest Count {}\n",
-            segments.len(),
-            dest_list.len()
-        );
-        // let mut init_dest = dest_list.remove(0);
-        let _ = self.set_segments(segments);
+
+        let _ = self.set_init_segments_merkle(segments.len());
+        println!("\n\n Fragment \n\n");
+        let mut merkle_store = self.to_merkle_store()?;
+
+        // empty box insert
+        if let Ok(merkle_tree) = merkle_store.save_to_segment_stream(&format, segments, dest_list) {
+            self.segments_bmff_mm = Some(merkle_tree)
+        };
+
+        // self.set_segments(dest_list)?;
         // let _ = self.set_init_merklemap(init_segment, segments.len() as u32);
         // convert the manifest to a store
         let mut store = self.to_store()?;
         // store.commit_claim(claim)?;
-        println!(
-            "Segment Count {}, Dest Count {} \n",
-            segments.len(),
-            dest_list.len()
-        );
+        // sign and write our store to to the output image file
         if _sync {
-            let _ = store.save_to_stream(&format, init_segment, init_dest, signer);
+            let _ = store.save_to_init_stream(&format, init_segment, init_dest, signer);
         } else {
             let _ = store
-                .save_to_stream_async(&format, init_segment, init_dest, signer)
+                .save_to_init_stream_async(&format, init_segment, init_dest, signer)
                 .await;
         }
-
-        println!("\n\n Fragment \n\n");
-        let mut merkle_store = self.to_merkle_store()?;
         // sign and write our store to to the output image file
-        for leaf_node in 0..segments.len() {
-            println!("Leaf Node {}\n", leaf_node);
-            if _sync {
-                let _ = merkle_store.save_to_merkle_stream(
-                    &format,
-                    &mut segments[leaf_node],
-                    &mut dest_list[leaf_node],
-                    leaf_node,
-                );
-            } else {
-                let _ = merkle_store.save_to_merkle_stream(
-                    &format,
-                    &mut segments[leaf_node],
-                    &mut dest_list[leaf_node],
-                    leaf_node,
-                );
-            }
-        }
         Ok(vec![])
     }
 
@@ -1424,32 +1397,28 @@ mod tests {
         // const CERTS: &[u8] = include_bytes!("../tests/fixtures/certs/ed25519.pub");
         // const PRIVATE_KEY: &[u8] = include_bytes!("../tests/fixtures/certs/ed25519.pem");
         let mut init_sources = Cursor::new(
-            include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boatinit.mp4").to_vec(),
-            // include_bytes!("../tests/fixtures/fragmented/boatinit.mp4").to_vec(),
+            // include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boatinit.mp4").to_vec(),
+            include_bytes!("../tests/fixtures/fragmented/mounting/init-stream0.m4s").to_vec(), // include_bytes!("../tests/fixtures/fragmented/boatinit.mp4").to_vec(),
         );
         let mut sources = vec![
             Cursor::new(
-                include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boat1.m4s")
+                include_bytes!("../tests/fixtures/fragmented/mounting/chunk-stream0-00001.m4s")
                     .to_vec(),
             ),
             Cursor::new(
-                include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boat2.m4s")
+                include_bytes!("../tests/fixtures/fragmented/mounting/chunk-stream0-00002.m4s")
                     .to_vec(),
             ),
             Cursor::new(
-                include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boat3.m4s")
+                include_bytes!("../tests/fixtures/fragmented/mounting/chunk-stream0-00003.m4s")
                     .to_vec(),
             ),
             Cursor::new(
-                include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boat4.m4s")
+                include_bytes!("../tests/fixtures/fragmented/mounting/chunk-stream0-00004.m4s")
                     .to_vec(),
             ),
             Cursor::new(
-                include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boat5.m4s")
-                    .to_vec(),
-            ),
-            Cursor::new(
-                include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boat6.m4s")
+                include_bytes!("../tests/fixtures/fragmented/mounting/chunk-stream0-00005.m4s")
                     .to_vec(),
             ),
         ];
@@ -1469,7 +1438,7 @@ mod tests {
             Cursor::new(Vec::new()),
             Cursor::new(Vec::new()),
             Cursor::new(Vec::new()),
-            Cursor::new(Vec::new()),
+            // Cursor::new(Vec::new()),
         ];
 
         let json = manifest_def("Test Manifest", "image/jpeg");

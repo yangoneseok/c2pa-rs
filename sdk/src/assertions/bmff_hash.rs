@@ -357,7 +357,7 @@ impl BmffHash {
         self.bmff_version
     }
 
-    fn set_bmff_version(&mut self, version: usize) {
+    pub fn set_bmff_version(&mut self, version: usize) {
         self.bmff_version = version;
     }
 

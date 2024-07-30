@@ -139,7 +139,7 @@ impl<'de> Deserialize<'de> for VecByteBuf {
     }
 }
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
 pub struct MerkleMap {
     #[serde(rename = "uniqueId")]
     pub unique_id: u32,
@@ -974,7 +974,7 @@ pub mod tests {
     //use tempfile::tempdir;
 
     //use super::*;
-    use crate::utils::test::fixture_path;
+    use crate::{assertions::BmffHash, utils::test::fixture_path};
 
     // #[cfg(not(target_arch = "wasm32"))]
     #[test]
@@ -1021,7 +1021,7 @@ pub mod tests {
                 // bmff_hash
                 //     .create_stream_segment_hash(&mut init_stream, None)
                 //     .unwrap();
-
+                println!("{:?}", bmff_hash);
                 bmff_hash
                     .verify_stream_segment(&mut init_stream, &mut segment_stream0, None)
                     .unwrap();
@@ -1078,6 +1078,7 @@ pub mod tests {
         // get the bmff hashes
         let claim = store.provenance_claim().unwrap();
         for dh_assertion in claim.hash_assertions() {
+            println!("dh_assertion {:?}", dh_assertion);
             if dh_assertion.label_root() == BmffHash::LABEL {
                 let bmff_hash = BmffHash::from_assertion(dh_assertion).unwrap();
                 let result2 =
@@ -1134,6 +1135,52 @@ pub mod tests {
                 // bmff_hash
                 //     .verify_stream_segment(&mut init_stream, &mut segment_stream5, None)
                 //     .unwrap();
+            }
+        }
+    }
+    #[test]
+    fn test_wasm() {
+        use crate::Reader;
+        use std::io::Cursor;
+
+        let init_sources = Cursor::new(
+            // include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boatinit.mp4").to_vec(),
+            include_bytes!("../../output/outputinit.mp4").to_vec(),
+            // include_bytes!("../tests/fixtures/fragmented/boatinit.mp4").to_vec(),
+        );
+        let sources = vec![
+            Cursor::new(include_bytes!("../../output/output1.m4s").to_vec()),
+            Cursor::new(include_bytes!("../../output/output2.m4s").to_vec()),
+            Cursor::new(include_bytes!("../../output/output3.m4s").to_vec()),
+            Cursor::new(include_bytes!("../../output/output4.m4s").to_vec()),
+            Cursor::new(include_bytes!("../../output/output5.m4s").to_vec()),
+        ];
+        // let source = Cursor::new(init_stream.to_vec());
+        // let media = Cursor::new(media_stream.to_vec());
+
+        let reader = Reader::from_stream("mp4", init_sources.clone()).expect("file not found");
+        let manifest = reader.active_manifest().unwrap();
+
+        let mut assertion: BmffHash = match manifest.find_assertion("c2pa.hash.bmff.v2") {
+            Ok(assertion) => assertion,
+            Err(_) => {
+                println!("No assertion found");
+                return ();
+            }
+        };
+
+        // console::log_1(&JsValue::from_str(&format!("{:?}", assertion.merkle())));
+        let _ = assertion.create_stream_segment_hash(&mut init_sources.clone(), None);
+        println!("init {:?}", assertion);
+        let result = assertion.verify_stream_segment(
+            &mut init_sources.clone(),
+            &mut sources[0].clone(),
+            None,
+        );
+        match result {
+            Ok(o) => println!("Result {:?}", o),
+            Err(e) => {
+                println!("Error {:?}", e);
             }
         }
     }

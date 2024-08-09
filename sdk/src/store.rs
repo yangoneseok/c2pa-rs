@@ -18,6 +18,9 @@ use std::{
 #[cfg(feature = "file_io")]
 use std::{fs, path::Path};
 
+#[cfg(feature = "wasm32")]
+use web_sys::console;
+
 use async_generic::async_generic;
 use log::error;
 use serde_bytes::ByteBuf;
@@ -2268,6 +2271,9 @@ impl Store {
                 // save sig so store is up to date
                 let pc_mut = self.provenance_claim_mut().ok_or(Error::ClaimEncoding)?;
                 pc_mut.set_signature_val(s);
+
+                #[cfg(feature = "wasm32")]
+                console::log_1(&JsValue::from_str(&format!("{:?}", init_dest)));
 
                 Ok(m)
             }

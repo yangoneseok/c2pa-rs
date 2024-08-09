@@ -974,7 +974,7 @@ pub mod tests {
     //use tempfile::tempdir;
 
     //use super::*;
-    use crate::{assertions::BmffHash, utils::test::fixture_path};
+    use crate::utils::test::fixture_path;
 
     // #[cfg(not(target_arch = "wasm32"))]
     #[test]
@@ -1138,50 +1138,51 @@ pub mod tests {
             }
         }
     }
-    #[test]
-    fn test_wasm() {
-        use crate::Reader;
-        use std::io::Cursor;
+    // #[test]
+    // fn test_wasm() {
+    // use crate::assertions::BmffHash;
+    //     use crate::Reader;
+    //     use std::io::Cursor;
 
-        let init_sources = Cursor::new(
-            // include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boatinit.mp4").to_vec(),
-            include_bytes!("../../output/outputinit.mp4").to_vec(),
-            // include_bytes!("../tests/fixtures/fragmented/boatinit.mp4").to_vec(),
-        );
-        let sources = vec![
-            Cursor::new(include_bytes!("../../output/output1.m4s").to_vec()),
-            Cursor::new(include_bytes!("../../output/output2.m4s").to_vec()),
-            Cursor::new(include_bytes!("../../output/output3.m4s").to_vec()),
-            Cursor::new(include_bytes!("../../output/output4.m4s").to_vec()),
-            Cursor::new(include_bytes!("../../output/output5.m4s").to_vec()),
-        ];
-        // let source = Cursor::new(init_stream.to_vec());
-        // let media = Cursor::new(media_stream.to_vec());
+    //     let init_sources = Cursor::new(
+    //         // include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boatinit.mp4").to_vec(),
+    //         include_bytes!("../../output/outputinit.mp4").to_vec(),
+    //         // include_bytes!("../tests/fixtures/fragmented/boatinit.mp4").to_vec(),
+    //     );
+    //     let sources = vec![
+    //         Cursor::new(include_bytes!("../../output/output1.m4s").to_vec()),
+    //         Cursor::new(include_bytes!("../../output/output2.m4s").to_vec()),
+    //         Cursor::new(include_bytes!("../../output/output3.m4s").to_vec()),
+    //         Cursor::new(include_bytes!("../../output/output4.m4s").to_vec()),
+    //         Cursor::new(include_bytes!("../../output/output5.m4s").to_vec()),
+    //     ];
+    //     // let source = Cursor::new(init_stream.to_vec());
+    //     // let media = Cursor::new(media_stream.to_vec());
 
-        let reader = Reader::from_stream("mp4", init_sources.clone()).expect("file not found");
-        let manifest = reader.active_manifest().unwrap();
+    //     let reader = Reader::from_stream("mp4", init_sources.clone()).expect("file not found");
+    //     let manifest = reader.active_manifest().unwrap();
 
-        let mut assertion: BmffHash = match manifest.find_assertion("c2pa.hash.bmff.v2") {
-            Ok(assertion) => assertion,
-            Err(_) => {
-                println!("No assertion found");
-                return ();
-            }
-        };
+    //     let mut assertion: BmffHash = match manifest.find_assertion("c2pa.hash.bmff.v2") {
+    //         Ok(assertion) => assertion,
+    //         Err(_) => {
+    //             println!("No assertion found");
+    //             return ();
+    //         }
+    //     };
 
-        // console::log_1(&JsValue::from_str(&format!("{:?}", assertion.merkle())));
-        let _ = assertion.create_stream_segment_hash(&mut init_sources.clone(), None);
-        println!("init {:?}", assertion);
-        let result = assertion.verify_stream_segment(
-            &mut init_sources.clone(),
-            &mut sources[0].clone(),
-            None,
-        );
-        match result {
-            Ok(o) => println!("Result {:?}", o),
-            Err(e) => {
-                println!("Error {:?}", e);
-            }
-        }
-    }
+    //     // console::log_1(&JsValue::from_str(&format!("{:?}", assertion.merkle())));
+    //     let _ = assertion.create_stream_segment_hash(&mut init_sources.clone(), None);
+    //     println!("init {:?}", assertion);
+    //     let result = assertion.verify_stream_segment(
+    //         &mut init_sources.clone(),
+    //         &mut sources[0].clone(),
+    //         None,
+    //     );
+    //     match result {
+    //         Ok(o) => println!("Result {:?}", o),
+    //         Err(e) => {
+    //             println!("Error {:?}", e);
+    //         }
+    //     }
+    // }
 }

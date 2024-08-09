@@ -1444,7 +1444,7 @@ mod tests {
         let json = manifest_def("Test Manifest", "image/jpeg");
         let mut builder = Builder::from_json(&json).unwrap();
         let signer = temp_signer();
-        let a = builder
+        builder
             .fragments_mp4_sign(
                 signer.as_ref(),
                 "mp4",

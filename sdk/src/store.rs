@@ -2228,14 +2228,14 @@ impl Store {
         &mut self,
         format: &str,
         input_stream: &mut dyn CAIRead,
-        output_stream: &mut dyn CAIReadWrite,
+        _output_stream: &mut dyn CAIReadWrite,
         signer: &dyn AsyncSigner,
     ))]
     pub fn save_to_init_stream(
         &mut self,
         format: &str,
         input_stream: &mut dyn CAIRead,
-        output_stream: &mut dyn CAIReadWrite,
+        _output_stream: &mut dyn CAIReadWrite,
         signer: &dyn Signer,
     ) -> Result<Vec<u8>> {
         let intermediate_output: Vec<u8> = Vec::new();
@@ -2247,38 +2247,39 @@ impl Store {
             &mut intermediate_stream,
             signer.reserve_size(),
         )?;
-        let pc = self.provenance_claim().ok_or(Error::ClaimEncoding)?;
-        let sig = if _sync {
-            self.sign_claim(pc, signer, signer.reserve_size())
-        } else {
-            self.sign_claim_async(pc, signer, signer.reserve_size())
-                .await
-        }?;
-        // let mm = self.get_claim(labels::BMFF_HASH).unwrap();
-        // println!("store.get_claim {:?}", mm);
-        let sig_placeholder = Store::sign_claim_placeholder(pc, signer.reserve_size());
+        Ok(jumbf_bytes)
+        // let pc = self.provenance_claim().ok_or(Error::ClaimEncoding)?;
+        // let sig = if _sync {
+        //     self.sign_claim(pc, signer, signer.reserve_size())
+        // } else {
+        //     self.sign_claim_async(pc, signer, signer.reserve_size())
+        //         .await
+        // }?;
+        // // let mm = self.get_claim(labels::BMFF_HASH).unwrap();
+        // // println!("store.get_claim {:?}", mm);
+        // let sig_placeholder = Store::sign_claim_placeholder(pc, signer.reserve_size());
 
-        intermediate_stream.rewind()?;
-        match self.finish_save_stream(
-            jumbf_bytes,
-            format,
-            &mut intermediate_stream,
-            output_stream,
-            sig,
-            &sig_placeholder,
-        ) {
-            Ok((s, m)) => {
-                // save sig so store is up to date
-                let pc_mut = self.provenance_claim_mut().ok_or(Error::ClaimEncoding)?;
-                pc_mut.set_signature_val(s);
+        // intermediate_stream.rewind()?;
+        // match self.finish_save_stream(
+        //     jumbf_bytes,
+        //     format,
+        //     &mut intermediate_stream,
+        //     output_stream,
+        //     sig,
+        //     &sig_placeholder,
+        // ) {
+        //     Ok((s, m)) => {
+        //         // save sig so store is up to date
+        //         let pc_mut = self.provenance_claim_mut().ok_or(Error::ClaimEncoding)?;
+        //         pc_mut.set_signature_val(s);
 
-                #[cfg(feature = "wasm32")]
-                console::log_1(&JsValue::from_str(&format!("{:?}", init_dest)));
+        //         #[cfg(feature = "wasm32")]
+        //         console::log_1(&JsValue::from_str(&format!("{:?}", init_dest)));
 
-                Ok(m)
-            }
-            Err(e) => Err(e),
-        }
+        //         Ok(m)
+        //     }
+        //     Err(e) => Err(e),
+        // }
     }
 
     pub fn save_to_segment_stream<R, W>(

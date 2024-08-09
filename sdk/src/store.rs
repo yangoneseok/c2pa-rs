@@ -2245,7 +2245,6 @@ impl Store {
             signer.reserve_size(),
         )?;
         let pc = self.provenance_claim().ok_or(Error::ClaimEncoding)?;
-        println!("{}:{}, store.get_claim {:?}", file!(), line!(), pc);
         let sig = if _sync {
             self.sign_claim(pc, signer, signer.reserve_size())
         } else {
@@ -2287,13 +2286,6 @@ impl Store {
         R: Read + Seek + Send,
         W: Write + Read + Seek + Send,
     {
-        println!(
-            "{}:{}, fragment_write_cai merkle_data: {:?}",
-            file!(),
-            line!(),
-            self.merklemap
-        );
-        // std::fs::copy(input_stream, &output_stream).unwrap();
         let mut intermediate_list: Vec<Cursor<Vec<u8>>> = Vec::new();
         for leaf_node in 0..output_stream.len() {
             let intermediate_output: Vec<u8> = Vec::new();
@@ -2334,14 +2326,9 @@ impl Store {
                 ByteBuf::from(bmff_hash[0].hash().unwrap().to_owned())
             })
             .collect::<Vec<ByteBuf>>();
-        println!("{}:{}, hashes hashes: {:?}", file!(), line!(), hashes);
+
         let segments_bmff_mm = Some(C2PAMerkleTree::from_leaves(hashes, "sha256", false));
-        println!(
-            "{}:{}, fragment_write_cai merkle_data: {:?}",
-            file!(),
-            line!(),
-            segments_bmff_mm
-        );
+
         for leaf_node in 0..output_stream.len() {
             let bmff_io = SegmentBmffIO::new(format);
             let mm = &BmffMerkleMap {

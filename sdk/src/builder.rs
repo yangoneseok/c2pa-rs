@@ -899,14 +899,14 @@ impl Builder {
         // store.commit_claim(claim)?;
         // sign and write our store to to the output image file
         if _sync {
-            let _ = store.save_to_init_stream(&format, init_segment, init_dest, signer);
+            store.save_to_init_stream(&format, init_segment, init_dest, signer)
         } else {
-            let _ = store
+            store
                 .save_to_init_stream_async(&format, init_segment, init_dest, signer)
-                .await;
+                .await
         }
         // sign and write our store to to the output image file
-        Ok(vec![])
+        // Ok(vec![])
     }
 
     #[cfg(feature = "file_io")]
@@ -1349,6 +1349,7 @@ mod tests {
     }
 
     #[test]
+    // #[cfg(feature = "file_io")]
     #[cfg(feature = "file_io")]
     fn fragment_mp4_store_manifest() {
         use serde_json::json;
@@ -1440,11 +1441,10 @@ mod tests {
             Cursor::new(Vec::new()),
             // Cursor::new(Vec::new()),
         ];
-
         let json = manifest_def("Test Manifest", "image/jpeg");
         let mut builder = Builder::from_json(&json).unwrap();
         let signer = temp_signer();
-        builder
+        let a = builder
             .fragments_mp4_sign(
                 signer.as_ref(),
                 "mp4",
@@ -1545,6 +1545,7 @@ mod tests {
         builder
             .sign(signer.as_ref(), "mp4", &mut init_sources, &mut init_dest)
             .unwrap();
+
         _save_cursor_to_file(&mut init_dest, &format!("./output/outputinit.mp4")).unwrap();
         // let manifest_store = Reader::from_stream("mp4", &mut dest_list[0]).expect("from_bytes");
         // println!("{}", manifest_store);

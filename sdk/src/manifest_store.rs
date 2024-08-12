@@ -231,7 +231,6 @@ impl ManifestStore {
                 .await?;
             }
         }
-        println!("{},{:?}", line!(), &validation_log.get_log());
         Ok(Self::from_store(store, &validation_log))
     }
 

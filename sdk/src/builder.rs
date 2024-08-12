@@ -228,12 +228,6 @@ impl Builder {
         let hashes = vec![init_buf.clone(); segments];
 
         self.segments_bmff_mm = Some(C2PAMerkleTree::from_leaves(hashes, "sha256", false));
-        println!(
-            "{}:{}, Merkle Tree {:?}\n",
-            file!(),
-            line!(),
-            self.segments_bmff_mm
-        );
         Ok(())
     }
 
@@ -276,15 +270,10 @@ impl Builder {
             count,
             alg: None,
             init_hash: Some(ByteBuf::from(bmff_hash.unwrap().hash().unwrap().clone())),
-            // init_hash: Some(ByteBuf::from([
-            //     175, 23, 119, 157, 3, 169, 191, 138, 166, 200, 37, 97, 59, 254, 247, 181, 84, 189,
-            //     192, 185, 15, 139, 154, 100, 231, 14, 21, 85, 123, 145, 182, 156,
-            // ])),
             hashes: crate::assertions::VecByteBuf(vec![root]),
         };
 
         self.init_bmff_mm = Some(init_bmff_mm);
-        // println!("{:?}\n", self.init_bmff_mm);
         Ok(())
     }
 
@@ -458,7 +447,6 @@ impl Builder {
                     zip.start_file(format!("ingredients/{}/", index), options)
                         .map_err(|e| Error::OtherError(Box::new(e)))?;
                     for (id, data) in ingredient.resources().resources() {
-                        //println!("adding ingredient {}/{}", index, id);
                         zip.start_file(format!("ingredients/{}/{}", index, id), options)
                             .map_err(|e| Error::OtherError(Box::new(e)))?;
                         zip.write_all(data)?;
@@ -501,7 +489,6 @@ impl Builder {
                     .split('/')
                     .nth(1)
                     .ok_or(Error::BadParam("Invalid resource path".to_string()))?;
-                //println!("adding resource {}", id);
                 builder.resources.add(id, data)?;
             }
             if file.name().starts_with("ingredients/") && file.name() != "ingredients/" {
@@ -884,7 +871,7 @@ impl Builder {
         //// 3.Merkle Tree 생성
 
         let _ = self.set_init_segments_merkle(segments.len());
-        println!("\n\n Fragment \n\n");
+
         let mut merkle_store = self.to_merkle_store()?;
 
         // empty box insert

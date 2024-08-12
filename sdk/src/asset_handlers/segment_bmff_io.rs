@@ -2023,7 +2023,6 @@ impl FragmentIO for SegmentBmffIO {
         // is_manifest: bool,
         merkle_data: &[u8],
     ) -> Result<()> {
-        println!("\nStart save_cai_store_fragment\n");
         let _ = self.fragment_write_cai(
             input_stream,
             output_stream,
@@ -2063,7 +2062,6 @@ pub mod tests {
         let mut log = DetailedStatusTracker::default();
         let store = Store::load_from_asset(&ap, true, &mut log);
         let errors = report_split_errors(log.get_log_mut());
-        println!("{:#?}", log.get_log_mut());
         assert!(errors.is_empty());
 
         if let Ok(s) = store {

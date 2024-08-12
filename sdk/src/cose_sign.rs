@@ -186,8 +186,6 @@ pub(crate) fn cose_sign(signer: &dyn Signer, data: &[u8], box_size: usize) -> Re
 
     let c2pa_sig_data = pad_cose_sig(&mut sign1, box_size)?;
 
-    // println!("sig: {}", Hexlify(&c2pa_sig_data));
-
     Ok(c2pa_sig_data)
 }
 

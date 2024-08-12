@@ -1726,12 +1726,6 @@ impl Store {
 
         if calc_hashes {
             dh.gen_hash_from_stream(asset_stream)?;
-            println!(
-                "\n여긴어디: {}:{}, hashping {:?}\n",
-                file!(),
-                line!(),
-                dh.hash()
-            );
         } else {
             match alg {
                 "sha256" => dh.set_hash([0u8; 32].to_vec()),
@@ -2193,15 +2187,12 @@ impl Store {
             signer.reserve_size(),
         )?;
         let pc = self.provenance_claim().ok_or(Error::ClaimEncoding)?;
-        println!("{}:{}, store.get_claim {:?}", file!(), line!(), pc);
         let sig = if _sync {
             self.sign_claim(pc, signer, signer.reserve_size())
         } else {
             self.sign_claim_async(pc, signer, signer.reserve_size())
                 .await
         }?;
-        // let mm = self.get_claim(labels::BMFF_HASH).unwrap();
-        // println!("store.get_claim {:?}", mm);
         let sig_placeholder = Store::sign_claim_placeholder(pc, signer.reserve_size());
 
         intermediate_stream.rewind()?;
@@ -2254,8 +2245,7 @@ impl Store {
             self.sign_claim_async(pc, signer, signer.reserve_size())
                 .await
         }?;
-        // let mm = self.get_claim(labels::BMFF_HASH).unwrap();
-        // println!("store.get_claim {:?}", mm);
+
         let sig_placeholder = Store::sign_claim_placeholder(pc, signer.reserve_size());
 
         intermediate_stream.rewind()?;
@@ -2793,12 +2783,6 @@ impl Store {
         let mut intermediate_stream = Cursor::new(intermediate_output);
 
         let pc = self.provenance_claim_mut().ok_or(Error::ClaimEncoding)?;
-        println!(
-            "\n여긴어디: {}:{}, provenance_claim_mut {:?}\n",
-            file!(),
-            line!(),
-            pc
-        );
         // Add remote reference XMP if needed and strip out existing manifest
         // We don't need to strip manifests if we are replacing an exsiting one
         let (url, remove_manifests) = match pc.remote_manifest() {
@@ -2860,7 +2844,6 @@ impl Store {
         if is_bmff {
             // 2) Get hash ranges if needed, do not generate for update manifests
             if !pc.update_manifest() {
-                println!("\n\nTEST\n\n");
                 intermediate_stream.rewind()?;
                 let bmff_hashes = Store::generate_bmff_data_hashes_for_stream(
                     &mut intermediate_stream,
@@ -2969,12 +2952,6 @@ impl Store {
                         &mut new_hash_ranges,
                         true,
                     )?;
-                    println!(
-                        "여긴어디: {}:{} updated_hashes {:?}",
-                        file!(),
-                        line!(),
-                        updated_hashes
-                    );
                     // patch existing claim hash with updated data
                     for hash in updated_hashes {
                         pc.update_data_hash(hash)?;
@@ -3003,12 +2980,6 @@ impl Store {
         let mut intermediate_stream = Cursor::new(intermediate_output);
 
         let pc = self.provenance_claim_mut().ok_or(Error::ClaimEncoding)?;
-        println!(
-            "\n여긴어디: {}:{}, provenance_claim_mut {:?}\n",
-            file!(),
-            line!(),
-            pc
-        );
         // Add remote reference XMP if needed and strip out existing manifest
         // We don't need to strip manifests if we are replacing an exsiting one
         let (url, remove_manifests) = match pc.remote_manifest() {
@@ -3070,7 +3041,6 @@ impl Store {
         if is_bmff {
             // 2) Get hash ranges if needed, do not generate for update manifests
             if !pc.update_manifest() {
-                println!("\n\nTEST\n\n");
                 intermediate_stream.rewind()?;
                 // let bmff_hashes = Store::generate_bmff_data_hashes_for_stream(
                 //     &mut intermediate_stream,
@@ -3179,12 +3149,6 @@ impl Store {
                         &mut new_hash_ranges,
                         true,
                     )?;
-                    println!(
-                        "여긴어디: {}:{} updated_hashes {:?}",
-                        file!(),
-                        line!(),
-                        updated_hashes
-                    );
                     // patch existing claim hash with updated data
                     for hash in updated_hashes {
                         pc.update_data_hash(hash)?;

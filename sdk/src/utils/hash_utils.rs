@@ -369,10 +369,9 @@ where
             if bmff_v2_starts.contains(start) && (end - start) == 0 {
                 hasher_enum.update(&start.to_be_bytes());
             }
-            // let mut test_arr: Vec<u8> = Vec::new();
+
             let mut chunk = vec![0u8; std::cmp::min(chunk_left as usize, MAX_HASH_BUF)];
             data.read_exact(&mut chunk)?;
-            // println!("{}:{}, chunk: {:?}", file!(), line!(), &chunk);
             loop {
                 let (tx, rx) = std::sync::mpsc::channel();
 
@@ -403,7 +402,6 @@ where
             }
         }
     }
-    // println!("{}:{}, done hashing {:?}", file!(), line!(), );
     // return the hash
     Ok(Hasher::finalize(hasher_enum))
 }
@@ -446,13 +444,6 @@ where
     R: Read + Seek + ?Sized,
 {
     if let Ok(data_hash) = hash_stream_by_alg(alg, reader, hash_range, is_exclusion) {
-        println!(
-            "{}:{}, inithash: {:?}, hash: {:?}",
-            file!(),
-            line!(),
-            hash,
-            &data_hash,
-        );
         vec_compare(hash, &data_hash)
     } else {
         false

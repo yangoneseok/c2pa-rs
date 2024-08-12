@@ -161,13 +161,6 @@ pub struct MerkleMap {
 impl MerkleMap {
     pub fn hash_check(&self, indx: u32, merkle_hash: &[u8]) -> bool {
         if let Some(h) = self.hashes.get(indx as usize) {
-            println!(
-                "{}:{}, h: {:?}, merkle_hash: {:?}",
-                file!(),
-                line!(),
-                h,
-                merkle_hash
-            );
             vec_compare(h, merkle_hash)
         } else {
             false
@@ -413,7 +406,6 @@ impl BmffHash {
         R: Read + Seek + ?Sized,
     {
         self.hash = Some(ByteBuf::from(self.hash_from_stream(asset_stream)?));
-        println!("{}:{}, hash: {:?}", file!(), line!(), self.hash);
         Ok(())
     }
 
@@ -435,12 +427,6 @@ impl BmffHash {
         };
 
         let bmff_exclusions = &self.exclusions;
-        println!(
-            "\n{}:{}, bmff_exclusions: {:?}\n",
-            file!(),
-            line!(),
-            bmff_exclusions
-        );
         // convert BMFF exclusion map to flat exclusion list
         let exclusions =
             bmff_to_jumbf_exclusions(asset_stream, bmff_exclusions, self.bmff_version > 1)?;
@@ -823,7 +809,6 @@ impl BmffHash {
             let c2pa_boxes = read_bmff_c2pa_boxes(fragment_stream)?;
 
             let bmff_merkle = c2pa_boxes.bmff_merkle;
-            println!("{}:{}, bmff_merkle: {:?}", file!(), line!(), bmff_merkle);
             if bmff_merkle.is_empty() {
                 return Err(Error::HashMismatch("Fragment had no MerkleMap".to_string()));
             }
@@ -1021,7 +1006,6 @@ pub mod tests {
                 // bmff_hash
                 //     .create_stream_segment_hash(&mut init_stream, None)
                 //     .unwrap();
-                println!("{:?}", bmff_hash);
                 bmff_hash
                     .verify_stream_segment(&mut init_stream, &mut segment_stream0, None)
                     .unwrap();
@@ -1078,7 +1062,6 @@ pub mod tests {
         // get the bmff hashes
         let claim = store.provenance_claim().unwrap();
         for dh_assertion in claim.hash_assertions() {
-            println!("dh_assertion {:?}", dh_assertion);
             if dh_assertion.label_root() == BmffHash::LABEL {
                 let bmff_hash = BmffHash::from_assertion(dh_assertion).unwrap();
                 let result2 =
@@ -1117,9 +1100,8 @@ pub mod tests {
 
         let manifest_bytes = bmff_handler.read_cai(&mut init_stream).unwrap();
         let store = Store::from_jumbf(&manifest_bytes, &mut log).unwrap();
-        let a =
+        let _ =
             Store::generate_bmff_data_hashes_for_stream_merkle(&mut init_stream, "sha256", true);
-        println!("{:?}", a);
         // get the bmff hashes
         let claim = store.provenance_claim().unwrap();
         for dh_assertion in claim.hash_assertions() {

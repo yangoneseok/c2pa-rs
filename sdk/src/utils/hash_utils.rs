@@ -402,6 +402,7 @@ where
             }
         }
     }
+    println!("{:?}", Hasher::finalize(hasher_enum.clone()));
     // return the hash
     Ok(Hasher::finalize(hasher_enum))
 }
@@ -443,7 +444,15 @@ pub fn verify_stream_by_alg<R>(
 where
     R: Read + Seek + ?Sized,
 {
+    println!("\n{}:{}, Claim hash {:?}\n", file!(), line!(), hash);
+
     if let Ok(data_hash) = hash_stream_by_alg(alg, reader, hash_range, is_exclusion) {
+        println!(
+            "\n{}:{}, Claim data_hash {:?}\n",
+            file!(),
+            line!(),
+            &data_hash
+        );
         vec_compare(hash, &data_hash)
     } else {
         false

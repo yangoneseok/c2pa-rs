@@ -55,6 +55,7 @@ impl Reader {
     #[async_generic()]
     pub fn from_stream(format: &str, mut stream: impl Read + Seek + Send) -> Result<Reader> {
         let verify = get_settings_value::<bool>("verify.verify_after_reading")?; // defaults to true
+        println!("Verify: {}", verify);
         let reader = if _sync {
             ManifestStore::from_stream(format, &mut stream, verify)
         } else {

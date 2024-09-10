@@ -1532,7 +1532,7 @@ impl Store {
                 return Err(Error::ProvenanceMissing);
             }
         };
-
+        // println!("\n{}:{}, {}:{:?}\n", file!(), line!(), "asset_data", claim);
         // verify the provenance claim
         Claim::verify_claim(
             claim,
@@ -2874,7 +2874,7 @@ impl Store {
                 intermediate_stream.rewind()?;
                 std::io::copy(&mut intermediate_stream, output_stream)?;
             }
-            let merkle = self.merkle().clone();
+
             // generate actual hash values
             let pc = self.provenance_claim_mut().ok_or(Error::ClaimEncoding)?; // reborrow to change mutability
             if !pc.update_manifest() {
@@ -2883,14 +2883,8 @@ impl Store {
                 if !bmff_hashes.is_empty() {
                     let mut bmff_hash = BmffHash::from_assertion(bmff_hashes[0])?;
                     output_stream.rewind()?;
-                    // bmff_hash.gen_hash_from_stream(output_stream)?;
-                    bmff_hash
-                        .create_stream_segment_hash(output_stream, None)
-                        .unwrap();
-                    bmff_hash.gen_hash_from_stream_merkle(
-                        merkle.leaves.len() as u32,
-                        merkle.get_root().unwrap().clone(),
-                    )?;
+                    bmff_hash.gen_hash_from_stream(output_stream)?;
+
                     pc.update_bmff_hash(bmff_hash)?;
                 }
             }
@@ -3894,7 +3888,6 @@ pub mod tests {
     use std::io::Write;
 
     use memchr::memmem;
-    use serde_bytes::ByteBuf;
     use sha2::{Digest, Sha256};
     use tempfile::tempdir;
 
@@ -3903,13 +3896,11 @@ pub mod tests {
         assertion::AssertionJson,
         assertions::{labels::BOX_HASH, Action, Actions, BoxHash, Uuid},
         asset_handlers::bmff_io::BmffIO,
-        asset_io::AssetIO,
         claim::AssertionStoreJsonFormat,
         jumbf_io::{get_assetio_handler_from_path, update_file_jumbf},
         status_tracker::*,
         utils::{
             hash_utils::Hasher,
-            merkle,
             patch::patch_file,
             test::{
                 create_test_claim, fixture_path, temp_dir_path, temp_fixture_path, temp_signer,
@@ -6332,13 +6323,66 @@ pub mod tests {
                 .to_vec(),
             ),
         ];
-        let test_merkle_tree =
-            merkle::C2PAMerkleTree::from_leaves(test_segment.to_vec(), "sha256", false);
+        let test_merkle_tree = crate::utils::merkle::C2PAMerkleTree::from_leaves(
+            test_segment.to_vec(),
+            "sha256",
+            false,
+        );
         println!("\n\nMerkle layers : {:?}\n\n", test_merkle_tree.layers);
         println!(
             "\n\nMerkle layers : {:?}\n\n",
             test_merkle_tree.get_proof_by_index(0)
         );
         println!("\n\nMerkle layers : {:?}\n\n", test_merkle_tree.get_root());
+    }
+
+    #[test]
+    fn test_verify_buffer() {
+        // let init_stream_path = fixture_path("CIE-sig-CA.jpg");
+        // let init_sources = include_bytes!("../tests/fixtures/fragmented/boatinit.mp4");
+        // let mut init_sources = Cursor::new(
+        //     include_bytes!("../tests/fixtures/fragmented/newscast_maninit.mp4").to_vec(),
+        // );
+        let mut init_sources = Cursor::new(include_bytes!("../tests/fixtures/video1.mp4").to_vec());
+        // let mut init_sources =
+        //     Cursor::new(include_bytes!("../tests/fixtures/CIE-sig-CA.jpg").to_vec());
+        // let mut init_sources = Cursor::new(
+        //     include_bytes!("../tests/fixtures/fragmented/fragmented_no_c2pa/boatinit.mp4").to_vec(),
+        // );
+        let mut log = DetailedStatusTracker::default();
+        // Store::from_jumbf(&mut init_sources, &mut log);
+
+        // let mani = crate::ManifestStore::from_file(
+        //     "/Users/digicap/workspace/c2pa/c2pa-rs/sdk/tests/fixtures/legacy_ingredient_hash.jpg",
+        // );
+        // println!("{:?}", mani.unwrap());
+        let format = "mp4";
+        if let Ok(manifest_bytes) = Store::load_jumbf_from_stream(format, &mut init_sources) {
+            // let mut store = Store::from_jumbf(manifest_bytes.as_slice(), &mut log);
+            match Store::from_jumbf(manifest_bytes.as_slice(), &mut log) {
+                Ok(mut store) => {
+                    println!("\n{}:{}, {:#?}\n", file!(), line!(), log);
+                    match store.verify_from_stream(
+                        &mut Cursor::new(manifest_bytes),
+                        format,
+                        &mut log,
+                    ) {
+                        Err(e) => println!("{:?}", e),
+                        _ => println!("Verify success"),
+                    };
+                }
+                Err(e) => println!("{:?}", e),
+            };
+        };
+        let manifest_store = crate::Reader::from_stream(format, init_sources).expect("from_bytes");
+        // println!("\n{}:{}, {:#?}\n", file!(), line!(), log);
+        println!(
+            "\n{}:{}, {:#?}\n",
+            file!(),
+            line!(),
+            manifest_store.active_manifest()
+        );
+
+        // assert_type_eq!(a, a);
     }
 }

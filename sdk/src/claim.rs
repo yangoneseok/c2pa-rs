@@ -1108,7 +1108,7 @@ impl Claim {
                     != jumbf::labels::SIGNATURE
             } // relative signature box
         };
-        println!("\n{}:{}, {:#?}\n", file!(), line!(), sig_box_err);
+
         if sig_box_err {
             let log_item = log_item!(claim.signature_uri(), "signature missing", "verify_claim")
                 .error(Error::ClaimMissingSignatureBox)
@@ -1154,7 +1154,7 @@ impl Claim {
     ) -> Result<()> {
         const UNNAMED: &str = "unnamed";
         let default_str = |s: &String| s.clone();
-        println!("\n{}:{}, {:?}\n", file!(), line!(), claim.label());
+
         match verified {
             Ok(vi) => {
                 if !vi.validated {
@@ -1314,7 +1314,6 @@ impl Claim {
                     let dh = DataHash::from_assertion(hash_binding_assertion)?;
                     let name = dh.name.as_ref().map_or(UNNAMED.to_string(), default_str);
                     if !dh.is_remote_hash() {
-                        println!("\n{}:{}, {:?}:{:?}\n", file!(), line!(), dh, dh.label());
                         // only verify local hashes here
                         let hash_result = match asset_data {
                             #[cfg(feature = "file_io")]
@@ -1329,12 +1328,7 @@ impl Claim {
                             }
                             _ => return Err(Error::UnsupportedType), /* this should never happen (coding error) */
                         };
-                        println!(
-                            "\n{}:{}, hash_result: {:?}\n",
-                            file!(),
-                            line!(),
-                            hash_result
-                        );
+
                         match hash_result {
                             Ok(_a) => {
                                 let log_item = log_item!(

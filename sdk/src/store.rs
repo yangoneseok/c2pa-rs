@@ -18,8 +18,8 @@ use std::{
 #[cfg(feature = "file_io")]
 use std::{fs, path::Path};
 
-#[cfg(feature = "wasm32")]
-use web_sys::console;
+// #[cfg(feature = "wasm32")]
+// use web_sys::console;
 
 use async_generic::async_generic;
 use log::error;

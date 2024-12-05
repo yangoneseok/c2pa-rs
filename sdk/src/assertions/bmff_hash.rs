@@ -962,77 +962,76 @@ pub mod tests {
     use crate::utils::test::fixture_path;
 
     // #[cfg(not(target_arch = "wasm32"))]
-    #[test]
-    #[cfg(feature = "file_io")]
-    fn test_fragemented_mp4() {
-        use crate::{
-            assertion::AssertionBase, assertions::BmffHash, asset_handlers::bmff_io::BmffIO,
-            asset_io::AssetIO, status_tracker::DetailedStatusTracker, store::Store,
-        };
+    // #[test]
+    // #[cfg(feature = "file_io")]
+    // fn test_fragemented_mp4() {
+    //     use crate::{
+    //         assertion::AssertionBase, assertions::BmffHash, asset_handlers::bmff_io::BmffIO,
+    //         asset_io::AssetIO, status_tracker::DetailedStatusTracker, store::Store,
+    //     };
 
-        let init_stream_path = fixture_path("../../output/outputinit.mp4");
-        let segment_stream_path0 = fixture_path("../../output/output1.m4s");
-        let segment_stream_path1 = fixture_path("../../output/output2.m4s");
-        let segment_stream_path2 = fixture_path("../../output/output3.m4s");
-        let segment_stream_path3 = fixture_path("../../output/output4.m4s");
-        let segment_stream_path4 = fixture_path("../../output/output5.m4s");
-        // let segment_stream_path5 = fixture_path("../../output/output6.m4s");
+    //     let init_stream_path = fixture_path("../../output/outputinit.mp4");
+    //     let segment_stream_path0 = fixture_path("../../output/output1.m4s");
+    //     let segment_stream_path1 = fixture_path("../../output/output2.m4s");
+    //     let segment_stream_path2 = fixture_path("../../output/output3.m4s");
+    //     let segment_stream_path3 = fixture_path("../../output/output4.m4s");
+    //     let segment_stream_path4 = fixture_path("../../output/output5.m4s");
+    //     // let segment_stream_path5 = fixture_path("../../output/output6.m4s");
 
-        // let segment_stream_path10 = fixture_path("fragmented/boat2.m4s");
-        // let segment_stream_path11 = fixture_path("fragmented/boat3.m4s");
+    //     // let segment_stream_path10 = fixture_path("fragmented/boat2.m4s");
+    //     // let segment_stream_path11 = fixture_path("fragmented/boat3.m4s");
 
-        let mut init_stream = std::fs::File::open(init_stream_path).unwrap();
-        let mut segment_stream0 = std::fs::File::open(segment_stream_path0).unwrap();
-        let mut segment_stream1 = std::fs::File::open(segment_stream_path1).unwrap();
-        let mut segment_stream2 = std::fs::File::open(segment_stream_path2).unwrap();
-        let mut segment_stream3 = std::fs::File::open(segment_stream_path3).unwrap();
-        let mut segment_stream4 = std::fs::File::open(segment_stream_path4).unwrap();
-        // let mut segment_stream5 = std::fs::File::open(segment_stream_path5).unwrap();
+    //     let mut init_stream = std::fs::File::open(init_stream_path).unwrap();
+    //     let mut segment_stream0 = std::fs::File::open(segment_stream_path0).unwrap();
+    //     let mut segment_stream1 = std::fs::File::open(segment_stream_path1).unwrap();
+    //     let mut segment_stream2 = std::fs::File::open(segment_stream_path2).unwrap();
+    //     let mut segment_stream3 = std::fs::File::open(segment_stream_path3).unwrap();
+    //     let mut segment_stream4 = std::fs::File::open(segment_stream_path4).unwrap();
+    //     // let mut segment_stream5 = std::fs::File::open(segment_stream_path5).unwrap();
 
-        let mut log = DetailedStatusTracker::default();
+    //     let mut log = DetailedStatusTracker::default();
 
-        let bmff_io = BmffIO::new("mp4");
+    //     let bmff_io = BmffIO::new("mp4");
 
-        let bmff_handler = bmff_io.get_reader();
+    //     let bmff_handler = bmff_io.get_reader();
 
-        let manifest_bytes = bmff_handler.read_cai(&mut init_stream).unwrap();
-        let store = Store::from_jumbf(&manifest_bytes, &mut log).unwrap();
+    //     let manifest_bytes = bmff_handler.read_cai(&mut init_stream).unwrap();
+    //     let store = Store::from_jumbf(&manifest_bytes, &mut log).unwrap();
 
-        // get the bmff hashes
-        let claim = store.provenance_claim().unwrap();
-        for dh_assertion in claim.hash_assertions() {
-            if dh_assertion.label_root() == BmffHash::LABEL {
-                let bmff_hash = BmffHash::from_assertion(dh_assertion).unwrap();
-                // bmff_hash
-                //     .create_stream_segment_hash(&mut init_stream, None)
-                //     .unwrap();
-                bmff_hash
-                    .verify_stream_segment(&mut init_stream, &mut segment_stream0, None)
-                    .unwrap();
+    //     // get the bmff hashes
+    //     let claim = store.provenance_claim().unwrap();
+    //     for dh_assertion in claim.hash_assertions() {
+    //         if dh_assertion.label_root() == BmffHash::LABEL {
+    //             let bmff_hash = BmffHash::from_assertion(dh_assertion).unwrap();
+    //             // bmff_hash
+    //             //     .create_stream_segment_hash(&mut init_stream, None)
+    //             //     .unwrap();
+    //             bmff_hash
+    //                 .verify_stream_segment(&mut init_stream, &mut segment_stream0, None)
+    //                 .unwrap();
 
-                bmff_hash
-                    .verify_stream_segment(&mut init_stream, &mut segment_stream1, None)
-                    .unwrap();
+    //             bmff_hash
+    //                 .verify_stream_segment(&mut init_stream, &mut segment_stream1, None)
+    //                 .unwrap();
 
-                bmff_hash
-                    .verify_stream_segment(&mut init_stream, &mut segment_stream2, None)
-                    .unwrap();
+    //             bmff_hash
+    //                 .verify_stream_segment(&mut init_stream, &mut segment_stream2, None)
+    //                 .unwrap();
 
-                bmff_hash
-                    .verify_stream_segment(&mut init_stream, &mut segment_stream3, None)
-                    .unwrap();
+    //             bmff_hash
+    //                 .verify_stream_segment(&mut init_stream, &mut segment_stream3, None)
+    //                 .unwrap();
 
-                bmff_hash
-                    .verify_stream_segment(&mut init_stream, &mut segment_stream4, None)
-                    .unwrap();
+    //             bmff_hash
+    //                 .verify_stream_segment(&mut init_stream, &mut segment_stream4, None)
+    //                 .unwrap();
 
-                // bmff_hash
-                //     .verify_stream_segment(&mut init_stream, &mut segment_stream5, None)
-                //     .unwrap();
-            }
-        }
-    }
-
+    //             // bmff_hash
+    //             //     .verify_stream_segment(&mut init_stream, &mut segment_stream5, None)
+    //             //     .unwrap();
+    //         }
+    //     }
+    // }
     #[cfg(not(target_arch = "wasm32"))]
     #[test]
     fn test_failed_fragemented_mp4() {

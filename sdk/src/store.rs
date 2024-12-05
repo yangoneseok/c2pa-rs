@@ -5247,7 +5247,7 @@ pub mod tests {
     #[test]
     fn test_bmff_jumbf_generation() {
         // test adding to actual image
-        let ap = fixture_path("fixtures/fragment/boatinit.mp4");
+        let ap = fixture_path("./fragmented/boatinit.mp4");
         let temp_dir = tempdir().expect("temp dir");
 
         let op = temp_dir_path(&temp_dir, "boatinit.mp4");

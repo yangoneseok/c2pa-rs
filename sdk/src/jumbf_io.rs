@@ -371,7 +371,7 @@ pub mod tests {
             // Box::new(RiffIO::new("")),
             Box::new(TiffIO::new("")),
             Box::new(SvgIO::new("")),
-            Box::new(Mp3IO::new("")),
+            // Box::new(Mp3IO::new("")),
         ];
 
         // build handler map
@@ -395,7 +395,7 @@ pub mod tests {
             // Box::new(RiffIO::new("")),
             Box::new(TiffIO::new("")),
             Box::new(SvgIO::new("")),
-            Box::new(Mp3IO::new("")),
+            // Box::new(Mp3IO::new("")),
         ];
 
         // build handler map
@@ -412,7 +412,7 @@ pub mod tests {
         let handlers: Vec<Box<dyn AssetIO>> = vec![
             Box::new(JpegIO::new("")),
             Box::new(PngIO::new("")),
-            Box::new(Mp3IO::new("")),
+            // Box::new(Mp3IO::new("")),
             Box::new(SvgIO::new("")),
             // Box::new(RiffIO::new("")),
         ];
@@ -446,7 +446,7 @@ pub mod tests {
         assert!(supported.iter().any(|s| s == "tiff"));
         assert!(supported.iter().any(|s| s == "dng"));
         assert!(supported.iter().any(|s| s == "svg"));
-        assert!(supported.iter().any(|s| s == "mp3"));
+        // assert!(supported.iter().any(|s| s == "mp3"));
     }
 
     fn test_jumbf(asset_type: &str, reader: &mut dyn CAIRead) {

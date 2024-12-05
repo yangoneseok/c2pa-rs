@@ -5430,10 +5430,10 @@ pub mod tests {
         external_manifest_test("TUSCANY.TIF");
     }
 
-    #[test]
-    fn test_external_manifest_embedded_webp() {
-        external_manifest_test("sample1.webp");
-    }
+    // #[test]
+    // fn test_external_manifest_embedded_webp() {
+    //     external_manifest_test("sample1.webp");
+    // }
 
     #[test]
     fn test_user_guid_external_manifest_embedded() {

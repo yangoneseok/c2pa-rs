@@ -399,7 +399,6 @@ dependencies = [
  "fast-xml",
  "getrandom",
  "hex",
- "id3",
  "image",
  "img-parts",
  "instant",
@@ -422,7 +421,6 @@ dependencies = [
  "rasn",
  "rasn-ocsp",
  "rasn-pkix",
- "riff",
  "rsa",
  "schemars",
  "serde",
@@ -1211,17 +1209,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f31827a206f56af32e590ba56d5d2d085f558508192593743f16b2306495269f"
 dependencies = [
  "cc",
-]
-
-[[package]]
-name = "id3"
-version = "1.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ba0a11a3cf6f08d58a5629531bdb4e7c3b8b595e9812a31a7058b1176c4631e"
-dependencies = [
- "bitflags 2.6.0",
- "byteorder",
- "flate2",
 ]
 
 [[package]]
@@ -2168,12 +2155,6 @@ name = "regex-syntax"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a66a03ae7c801facd77a29370b4faec201768915ac14a721ba36f20bc9c209b"
-
-[[package]]
-name = "riff"
-version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9b1a3d5f46d53f4a3478e2be4a5a5ce5108ea58b100dcd139830eae7f79a3a1"
 
 [[package]]
 name = "ring"

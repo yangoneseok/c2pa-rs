@@ -340,6 +340,7 @@ pub(crate) fn check_cert(
     // check cert values
     let tbscert = &signcert.tbs_certificate;
 
+    /*
     let is_self_signed = tbscert.is_ca() && tbscert.issuer() == tbscert.subject();
 
     // self signed certs are disallowed
@@ -354,7 +355,7 @@ pub(crate) fn check_cert(
 
         return Err(Error::CoseInvalidCert);
     }
-
+    */
     // unique ids are not allowed
     if signcert.issuer_uid.is_some() || signcert.subject_uid.is_some() {
         log_item!(
